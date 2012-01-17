@@ -2034,6 +2034,23 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device(LIBMTP_raw_device_t *rawdevice)
   if (mtp_device == NULL)
     return NULL;
 
+  // Check for MTPZ devices.
+  {
+    LIBMTP_device_extension_t *tmpext = mtp_device->extensions;
+ 
+    while (tmpext != NULL) 
+    {
+      if (!strcmp(tmpext->name, "microsoft.com/MTPZ")) 
+	  {
+        LIBMTP_INFO("MTPZ device detected. Authenticating...\n");
+	    ptp_mtpz_handshake(mtp_device->params);
+		break;
+      }
+       
+      tmpext = tmpext->next;
+    }
+  }
+
   // Set up this device as cached
   mtp_device->cached = 1;
   /*

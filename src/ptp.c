@@ -25,6 +25,7 @@
 #define _BSD_SOURCE
 #include "config.h"
 #include "ptp.h"
+#include "mtpz-crypto.h"
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -2830,6 +2831,438 @@ ptp_mtp_setobjectproplist (PTPParams* params, MTPProperties *props, int nrofprop
 	free(opldata);
 
 	return ret;
+}
+
+/* Microsoft MTPZ extensions */
+
+uint16_t
+ptp_mtpz_handshake (PTPParams* params)
+{
+	printf("(MTPZ) Setting session initiator info: ");
+	ptp_mtpz_setsessioninitiatorinfo(params);
+
+	printf("(MTPZ) Resetting handshake: ");
+	ptp_mtpz_resethandshake(params);
+
+	printf("(MTPZ): Sending application certificate message: ");
+	unsigned char *random;
+	ptp_mtpz_sendapplicationcertificatemessage(params, &random);
+
+	printf("(MTPZ) Getting and validating handshake response: ");
+	unsigned char *hash;
+	ptp_mtpz_validatehandshakeresponse(params, random, &hash);
+
+	printf("(MTPZ) Sending confirmation message: ");
+	ptp_mtpz_sendconfirmationmessage(params, hash);
+
+	printf("(MTPZ) Opening secure sync session: ");
+	ptp_mtpz_opensecuresyncsession(params, hash);
+
+	free(random);
+	free(hash);
+
+	return PTP_RC_OK;
+}
+
+
+uint16_t
+ptp_mtpz_setsessioninitiatorinfo (PTPParams* params)
+{
+	PTPPropertyValue propval;
+	propval.str = "libmtp/Sajid Anwar - MTPZClassDriver";
+
+	uint16_t ret;
+	ret = ptp_setdevicepropvalue(params,
+				   PTP_DPC_MTP_SessionInitiatorInfo,
+				   &propval,
+				   PTP_DTC_STR);
+
+	if (ret == PTP_RC_OK)
+	{
+		printf("success.\n");
+	}
+
+	return ret;
+}
+
+uint16_t 
+ptp_mtpz_resethandshake (PTPParams* params)
+{
+	uint16_t ret = ptp_generic_no_data(params, PTP_OC_MTP_WMDRMPD_EndTrustedAppSession, 0);
+
+	if (ret == PTP_RC_OK)
+	{
+		printf("success.\n");
+	}
+
+	return ret;
+}
+
+uint16_t
+ptp_mtpz_sendapplicationcertificatemessage (PTPParams* params, unsigned char **out_random)
+{
+	PTPContainer ptp;
+	uint16_t ret;
+	uint32_t size;
+
+	unsigned int len;
+	unsigned char* applicationCertificateMessage = ptp_mtpz_makeapplicationcertificatemessage(&len, out_random);
+
+	PTP_CNT_INIT(ptp);
+	ptp.Code=PTP_OC_MTP_WMDRMPD_SendWMDRMPDAppRequest;
+	size=len;
+	ret=ptp_transaction(params, &ptp, PTP_DP_SENDDATA, size, &applicationCertificateMessage, NULL);
+
+	if (ret == PTP_RC_OK)
+	{
+		printf("success.\n");
+	}
+
+	free(applicationCertificateMessage);
+
+	return ret;
+}
+
+uint16_t
+ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, unsigned char **calculatedHash)
+{
+	uint16_t ret;
+	unsigned int len;
+	unsigned char* response = NULL;
+
+	PTPContainer ptp;
+	PTP_CNT_INIT(ptp);
+	ptp.Code = PTP_OC_MTP_WMDRMPD_GetWMDRMPDAppResponse;
+	len = 0;
+
+	ret = ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &response, &len);
+
+	if (ret == PTP_RC_OK) 
+	{
+		char *reader = (char *)response;
+		int i;
+
+		if (*(reader++) != '\x02')
+		{
+			return -1;
+		}
+
+		if (*(reader++) != '\x02')
+		{
+			return -1;
+		}
+
+		// Message is always 128 bytes.
+		reader++;
+		if (*(reader++) != '\x80')
+		{
+			return -1;
+		}
+
+		char *message = (char *)malloc(128);
+		memcpy(message, reader, 128);
+		reader += 128;
+
+		// Decrypt the hash-key-message..
+		char *msg_dec = (char *)malloc(128);
+		memset(msg_dec, 0, 128);
+
+		const unsigned char *modulus = (const unsigned char *)"CAD0D4C357342DD7AD959A5029D3D316972B9B9FE234F08BA7B6BFF3B522505B16F52D218C693597B2840F90807A7F77899D7454DBC2011724D45603A136682C3B4FA43A21B201FF3D8EFE16CDDA5EA6D225DD74C68D09B84536D3B2292BEB83D1D0DBB692261EEB2EBEFEB21B1836C7E19864F4198CE84FE2033FBEFCD377E5";
+		const unsigned char *priv_key = (const unsigned char *)"79EE227B6DA9C905A92E0F9FB205CF19FDB811CF85471E765755DF00BD1CEC025742FEE6F46B2BF50F35A5C5D1F7D33A2259AEDE755FA5182CE41AF203B199DE2BA5CF801FCB4C8863B3C40CFDB18C9985DDAD8710618802FD8969127C5F0FD52931F74A11082E27890CFBD11AE21B3611E54212D9E4269801F84D4F7E4EA601";
+		const unsigned char *pub_exp = (const unsigned char *)"10001";	
+		mtpz_rsa_t *rsa = mtpz_rsa_init(modulus, priv_key, pub_exp);
+
+		if (mtpz_rsa_decrypt(128, (unsigned char *)message, 128, (unsigned char *)msg_dec, rsa) == 0)
+		{
+			printf("failure (could not perform RSA decryption).\n");
+
+			free(message);
+			free(msg_dec);
+			mtpz_rsa_free(rsa);
+			return ret;
+		}
+
+		mtpz_rsa_free(rsa);
+		rsa = NULL;
+
+		char *state = mtpz_hash_init_state();
+		char *hash_key = (char *)malloc(16);
+		char *v10 = mtpz_hash_custom6A5DC(state, msg_dec + 21, 107, 20);
+
+		for (i = 0; i < 20; i++)
+			msg_dec[i + 1] ^= v10[i];
+
+		char *v11 = mtpz_hash_custom6A5DC(state, msg_dec + 1, 20, 107);
+
+		for (i = 0; i < 107; i++)
+			msg_dec[i + 21] ^= v11[i];
+
+		memcpy(hash_key, msg_dec + 112, 16);
+
+		// Encrypted message is 0x340 bytes.
+		reader += 2;
+		if (*(reader++) != '\x03' || *(reader++) != '\x40')
+		{
+			return -1;
+		}
+
+		unsigned char *act_msg = (unsigned char *)malloc(832);
+		unsigned char *act_reader = act_msg;
+		memcpy(act_msg, reader, 832);
+		reader = NULL;
+
+		mtpz_encryption_cipher_advanced((unsigned char *)hash_key, 16, act_msg, 832, 0);
+
+		act_reader++;
+		unsigned int certs_length = __builtin_bswap32(*(unsigned int *)(act_reader));
+		act_reader += 4;
+		act_reader += certs_length;
+
+		unsigned int rand_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		unsigned char *rand_data = (unsigned char *)malloc(rand_length);
+		memcpy(rand_data, act_reader, rand_length);
+		if (memcmp(rand_data, random, 16) != 0)
+		{
+			free(rand_data);
+			return -1;
+		}
+		free(rand_data);
+		act_reader += rand_length;
+
+		unsigned int dev_rand_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		act_reader += dev_rand_length;
+
+		act_reader++;
+
+		unsigned int sig_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		act_reader += sig_length;
+
+		act_reader++;
+
+		unsigned int machash_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		unsigned char *machash_data = (unsigned char *)malloc(machash_length);
+		memcpy(machash_data, act_reader, machash_length);
+		act_reader += machash_length;
+	
+		*calculatedHash = machash_data;
+
+		printf("success.\n");
+
+		free(message);
+		free(msg_dec);
+		free(state);
+		free(v10);
+		free(v11);
+		free(act_msg);
+	}
+	else
+	{
+		printf("failure (did not receive device's response).\n");
+	}
+
+	return ret;
+}
+
+uint16_t
+ptp_mtpz_sendconfirmationmessage (PTPParams* params, unsigned char *hash)
+{
+	PTPContainer ptp;
+	uint16_t ret;
+	uint32_t size;
+	
+	unsigned char *message = ptp_mtpz_makeconfirmationmessage(hash, &size);
+
+	PTP_CNT_INIT(ptp);
+	ptp.Code=PTP_OC_MTP_WMDRMPD_SendWMDRMPDAppRequest;
+
+	ret=ptp_transaction(params, &ptp, PTP_DP_SENDDATA, size, &message, NULL);
+
+	if (ret == PTP_RC_OK)
+	{
+		printf("success.\n");
+	}
+	else
+	{
+		printf("failure.\n");
+	}
+
+	return ret;
+}
+
+
+uint16_t 
+ptp_mtpz_opensecuresyncsession (PTPParams* params, unsigned char *hash)
+{
+	unsigned char *mch = (unsigned char *)malloc(16);
+	unsigned int *hashparams = (unsigned int *)mch;
+	unsigned int macCount = *(unsigned int *)(hash + 16);
+
+	mtpz_encryption_encrypt_mac(hash, 16, (unsigned char *)(&macCount), 4, mch);
+
+	uint16_t ret = ptp_generic_no_data(params, 
+										PTP_OC_MTP_WMDRMPD_EnableTrustedFilesOperations, 4,
+										__builtin_bswap32(hashparams[0]), __builtin_bswap32(hashparams[1]),
+										__builtin_bswap32(hashparams[2]), __builtin_bswap32(hashparams[3]));
+
+	if (ret == PTP_RC_OK)
+	{
+		printf("success.\n");
+	}
+	else
+	{
+		printf("failure.\n");
+	}
+
+	free(mch);
+
+	return ret;
+};
+
+unsigned char *
+ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char **out_random)
+{
+	*out_len = 785;
+
+	unsigned char *acm = (unsigned char *)malloc(785);
+	unsigned char *target = acm;
+	memset(acm, 0, 785);
+
+	unsigned char *random = (unsigned char *)malloc(16);
+
+	int i = 0;
+
+	int certsLength = 0x275;
+	const char *certs =
+		"\x02\x00\x00\x01\x35\x01\x00\x00\x00\x00\xB5\x01\x00\x00\x00\x01\x00\x00\x00\x00"
+		"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x5A\x75\x6E\x65\x20\x53"
+		"\x6F\x66\x74\x77\x61\x72\x65\x20\x43\x41\x20\x31\x00\x01\x00\x01\x00\x80\x33\x6E"
+		"\xE6\xAA\x07\xBF\xB3\xFF\xD0\x40\x24\xCE\xC3\x8B\xE6\x49\x7E\xF6\x0E\x3D\x7F\x68"
+		"\x2E\x0F\xF1\x5E\x6C\x65\xFF\x61\x3B\xDE\x17\x6F\xAD\x71\x37\x88\x4E\x80\xA8\x13"
+		"\xCF\x53\xC3\x10\x1A\xA5\x1B\x9E\x4F\x54\xB2\x4F\xD5\x14\xCD\xC5\x09\xB6\xB7\x1E"
+		"\x1F\x48\x51\x3D\xF0\x64\x44\xD9\xB5\x59\x63\xE8\x12\x1C\x4C\x69\xB6\x7D\x6A\x13"
+		"\x14\xF9\x73\xC9\x58\x5C\x29\xBB\x99\x0A\xD7\xFD\x15\x1D\xBB\xCB\x4F\x9E\xD7\xDF"
+		"\xE2\x92\xBA\x4E\xD9\xC6\xAC\xF5\x8E\x6A\xDE\xEF\x5B\x87\x7A\x1C\x15\x45\x74\x26"
+		"\x34\x91\x69\x46\x45\x9B\x09\x4B\x25\x9E\xD8\x5E\xF0\x2B\x08\xA3\x18\xE6\x7A\xFD"
+		"\x68\xC2\x89\xA8\xC6\xA6\x1B\xC8\x02\x3C\xA8\x7F\xE3\x67\xBD\xCC\x08\x56\xC3\xD1"
+		"\x57\x58\xC8\x66\xE5\x3F\xB5\x2E\x86\xEC\x56\x9C\x9C\x07\x0A\x22\x17\x4F\xBD\x7C"
+		"\x4D\xCD\x39\x5E\xC6\x85\x30\x16\x34\x51\xCE\x1F\x58\x80\x44\xA0\x6E\xBB\x95\xA6"
+		"\xD4\xBE\x68\xB0\x89\xA4\xF2\x5A\x61\x2F\xFC\xEA\x56\xC1\xC3\xF8\xA6\x88\x0C\x05"
+		"\x76\xF2\x65\x74\xB6\x4F\xF8\x3D\x28\x68\xF0\xFE\x36\x96\xBC\x84\x25\x48\x7A\xE0"
+		"\x62\xD4\x8A\xAD\xFD\x08\x8A\x97\x87\xB8\x06\x81\x0B\xED\x00\x00\x01\x37\x01\x00"
+		"\x00\x00\x00\xB7\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+		"\x00\x00\x00\x00\x00\x00\x14\x5A\x75\x6E\x65\x20\x53\x6F\x66\x74\x77\x61\x72\x65"
+		"\x20\x4C\x65\x61\x66\x20\x31\x00\x01\x00\x01\x00\x80\xE5\x77\xD3\xFC\xBE\x3F\x03"
+		"\xE2\x4F\xE8\x8C\x19\xF4\x64\x98\xE1\xC7\x36\x18\x1B\xB2\xFE\xBE\x2E\xEB\x1E\x26"
+		"\x92\xB6\xDB\xD0\xD1\x83\xEB\x2B\x29\xB2\xD3\x36\x45\xB8\x09\x8D\xC6\x74\xDD\x25"
+		"\xD2\xA6\x5E\xDA\xCD\x16\xFE\x8E\x3D\xFF\x01\xB2\x21\x3A\xA4\x4F\x3B\x2C\x68\x36"
+		"\xA1\x03\x56\xD4\x24\x17\x01\xC2\xDB\x54\x74\x9D\x89\x77\x7F\x7A\x80\x90\x0F\x84"
+		"\xB2\x97\x35\x69\x8C\x21\x2D\xF5\x16\x5B\x50\x22\xB5\xF3\xBF\xB6\xA7\x8B\xF0\x34"
+		"\xE2\x9F\x9B\x2B\x97\x16\xD3\xD3\x29\x50\x9A\x95\xAD\xD7\x2D\x34\x57\xC3\xD4\xD0"
+		"\xCA\x7E\xEA\xC9\x77\x6F\x4D\x73\xA4\xAA\xFD\x89\x6B\xAA\x5A\x86\x85\xC0\x5D\x5B"
+		"\x74\x66\x65\x21\x84\x81\x67\x5E\xD6\x29\xB2\x55\x3A\x9D\xF0\x3D\x74\x58\x66\xC5"
+		"\xCF\x24\x03\x51\xA7\x6C\x6D\xBB\xD0\x28\x30\xE5\xF4\x72\xE2\xAD\x24\x58\x7C\x7C"
+		"\xAB\x60\x18\xFD\xD9\x34\xC0\x93\xDF\x41\xCA\xB6\x18\x7E\x6E\x1E\xE9\xBB\x8D\xD5"
+		"\x99\xF9\xA2\x10\xF4\x05\x1F\xCD\xFD\x55\x28\x8D\x97\x61\xCA\x22\xC3\x21\x9E\x72"
+		"\x24\x76\x46\xAB\x50\x50\xB0\xB2\xC7\x7F\x1D\xFB\x6F\x95\x45\x64\x03\x61\xA2\x7C"
+		"\xAF\xCC\x59\xF3\x24\x42\xE2\x1B\x7B";
+
+	// Write the marker bytes, length of certificates, and certificates themselves.
+	*(target++) = '\x02';	*(target++) = '\x01';	*(target++) = '\x01';	*(target++) = '\x00';	*(target++) = '\x00';	*(target++) = '\x02';	*(target++) = '\x75';
+	memcpy(target, certs, certsLength);
+	target += certsLength;
+
+	// Write the random bytes.
+	*(target++) = '\x00';	*(target++) = '\x10';
+	srand(time(NULL));
+	
+	for (i = 0; i < 16; i++) 
+		*(random + i) = (unsigned char)(rand() % 256);
+	
+	*out_random = random;
+	memcpy(target, random, 16);
+	target += 16;
+
+	char *state = mtpz_hash_init_state();
+	char *v16 = (char *)malloc(28); memset(v16, 0, 28);
+	char *hash = (char *)malloc(20); memset(hash, 0, 20);
+	char *odata = (char *)malloc(128); memset(odata, 0, 128);
+	
+	mtpz_hash_reset_state(state);
+	mtpz_hash_transform_hash(state, (char *)acm + 2, (target - acm - 2));
+	mtpz_hash_finalize_hash(state, v16 + 8);
+
+	mtpz_hash_reset_state(state);
+	mtpz_hash_transform_hash(state, v16, 28);
+	mtpz_hash_finalize_hash(state, hash);
+
+	char *v17 = mtpz_hash_custom6A5DC(state, hash, 20, 107);
+
+	for (i = 0; i < 20; i++)
+		odata[107 + i] = hash[i];
+
+	odata[106] = '\x01';
+
+	if (v17 != NULL)
+	{
+		for (i = 0; i < 107; i++)
+			odata[i] ^= v17[i];
+
+		odata[0] &= 127;
+		odata[127] = 188;
+	}
+
+	// Free up some jazz.
+	free(state); state = NULL;
+	free(v16); v16 = NULL;
+	free(v17); v17 = NULL;
+	free(hash); hash = NULL;
+
+	// Take care of some RSA jazz.
+	const unsigned char *modulus = (const unsigned char *)"CAD0D4C357342DD7AD959A5029D3D316972B9B9FE234F08BA7B6BFF3B522505B16F52D218C693597B2840F90807A7F77899D7454DBC2011724D45603A136682C3B4FA43A21B201FF3D8EFE16CDDA5EA6D225DD74C68D09B84536D3B2292BEB83D1D0DBB692261EEB2EBEFEB21B1836C7E19864F4198CE84FE2033FBEFCD377E5";
+	const unsigned char *priv_key = (const unsigned char *)"79EE227B6DA9C905A92E0F9FB205CF19FDB811CF85471E765755DF00BD1CEC025742FEE6F46B2BF50F35A5C5D1F7D33A2259AEDE755FA5182CE41AF203B199DE2BA5CF801FCB4C8863B3C40CFDB18C9985DDAD8710618802FD8969127C5F0FD52931F74A11082E27890CFBD11AE21B3611E54212D9E4269801F84D4F7E4EA601";
+	const unsigned char *pub_exp = (const unsigned char *)"10001";	
+	mtpz_rsa_t *rsa = mtpz_rsa_init(modulus, priv_key, pub_exp);
+	char *signature = (char *)malloc(128);	
+	memset(signature, 0, 128);
+	mtpz_rsa_sign(128, (unsigned char *)odata, 128, (unsigned char *)signature, rsa);
+
+	// Free some more things.
+	mtpz_rsa_free(rsa); rsa = NULL;
+	free(odata); odata = NULL;
+
+	// Write the signature + bytes.
+	*(target++) = '\x01'; *(target++) = '\x00'; *(target++) = '\x80';
+	memcpy(target, signature, 128);
+
+	// Kill target.
+	target = NULL;
+
+	return acm;
+};
+
+unsigned char *
+ptp_mtpz_makeconfirmationmessage (unsigned char *hash, unsigned int *out_len)
+{
+	*out_len = 20;
+	unsigned char *message = (unsigned char *)malloc(20);
+	message[0] = (unsigned char)0x02;
+	message[1] = (unsigned char)0x03;
+	message[2] = (unsigned char)0x00;
+	message[3] = (unsigned char)0x10;
+
+	unsigned char *seed = (unsigned char *)malloc(16);
+	memset(seed, 0, 16);
+	seed[15] = (unsigned char)(0x01);
+
+	mtpz_encryption_encrypt_mac(hash, 16u, seed, 16u, message + 4);
+
+	free(seed);
+
+	return message;
 }
 
 /****** CHDK interface ******/
