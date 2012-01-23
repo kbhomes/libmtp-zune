@@ -2838,26 +2838,52 @@ ptp_mtp_setobjectproplist (PTPParams* params, MTPProperties *props, int nrofprop
 uint16_t
 ptp_mtpz_handshake (PTPParams* params)
 {
+	int ret=0;
+
 	printf("(MTPZ) Setting session initiator info: ");
-	ptp_mtpz_setsessioninitiatorinfo(params);
+	ret = ptp_mtpz_setsessioninitiatorinfo(params);
+	if (ret != PTP_RC_OK)
+	{
+		return -1;
+	}
 
 	printf("(MTPZ) Resetting handshake: ");
-	ptp_mtpz_resethandshake(params);
+	ret = ptp_mtpz_resethandshake(params);
+	if (ret != PTP_RC_OK)
+	{
+		return -1;
+	}
 
 	printf("(MTPZ): Sending application certificate message: ");
-	unsigned char *random;
-	ptp_mtpz_sendapplicationcertificatemessage(params, &random);
+	unsigned char *random=NULL;
+	ret = ptp_mtpz_sendapplicationcertificatemessage(params, &random);
+	if (ret != PTP_RC_OK)
+	{
+		return -1;
+	}
 
 	printf("(MTPZ) Getting and validating handshake response: ");
-	unsigned char *hash;
-	ptp_mtpz_validatehandshakeresponse(params, random, &hash);
+	unsigned char *hash=NULL;
+	ret = ptp_mtpz_validatehandshakeresponse(params, random, &hash);
+	if (ret != PTP_RC_OK)
+	{
+		return -1;
+	}
 
 	printf("(MTPZ) Sending confirmation message: ");
-	ptp_mtpz_sendconfirmationmessage(params, hash);
+	ret = ptp_mtpz_sendconfirmationmessage(params, hash);
+	if (ret != PTP_RC_OK)
+	{
+		return -1;
+	}
 
 	printf("(MTPZ) Opening secure sync session: ");
-	ptp_mtpz_opensecuresyncsession(params, hash);
-
+	ret = ptp_mtpz_opensecuresyncsession(params, hash);
+	if (ret != PTP_RC_OK)
+	{
+		return -1;
+	}
+	
 	free(random);
 	free(hash);
 
