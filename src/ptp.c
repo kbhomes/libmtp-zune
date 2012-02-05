@@ -2854,7 +2854,7 @@ ptp_mtpz_handshake (PTPParams* params)
 		return -1;
 	}
 
-	printf("(MTPZ): Sending application certificate message: ");
+	printf("(MTPZ) Sending application certificate message: ");
 	unsigned char *random=NULL;
 	ret = ptp_mtpz_sendapplicationcertificatemessage(params, &random);
 	if (ret != PTP_RC_OK)
