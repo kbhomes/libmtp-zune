@@ -156,9 +156,23 @@ AM_CONDITIONAL(LIBUSB0_COMPILE, test x"$found_libusb0_pkg" = "xyes")
 AM_CONDITIONAL(LIBOPENUSB_COMPILE, test x"$ac_cv_lib_openusb_openusb_init" = "xyes")
 AC_MSG_NOTICE([*** using libusb $LIBUSB_VER ***])
 
-# Check for libgcrypt.
-AC_MSG_CHECKING([for libgcrypt])
-AC_CHECK_LIB([gcrypt], [gcry_check_version],, [AC_MSG_ERROR([*** libgcrypt not found! ***])])
+# Optionally disable MTPZ functionality.
+AC_ARG_ENABLE([mtpz], 
+	AC_HELP_STRING([--disable-mtpz], [Disable functionality to connect to MTPZ devices (e.g. Zune)]),
+	[ac_include_mtpz=$enableval],
+	[ac_include_mtpz="yes"])
+
+# Include MTPZ if not disabled.
+if test x"$ac_include_mtpz" = "xyes" ; then
+	# Check for libgcrypt.
+	AC_MSG_CHECKING([for libgcrypt])
+	AC_CHECK_LIB([gcrypt], [gcry_check_version], , [AC_MSG_ERROR([*** libgcrypt not found! ***])])
+	
+	AC_DEFINE(INCLUDE_MTPZ, [], [Include MTPZ functionality])
+	AC_MSG_NOTICE([MTPZ functionality is included]);
+else
+	AC_MSG_NOTICE([MTPZ functionality is not included]);
+fi
 
 # Checks for header files.
 AC_HEADER_STDC

@@ -2328,6 +2328,7 @@ uint16_t ptp_mtp_sendobjectproplist (PTPParams* params, uint32_t* store, uint32_
 				     uint16_t objecttype, uint64_t objectsize, MTPProperties *props, int nrofprops);
 uint16_t ptp_mtp_setobjectproplist (PTPParams* params, MTPProperties *props, int nrofprops);
 
+#ifdef INCLUDE_MTPZ
 /* Microsoft MTPZ (Zune) extensions */
 uint16_t ptp_mtpz_handshake (PTPParams* params);
 uint16_t ptp_mtpz_setsessioninitiatorinfo (PTPParams* params);
@@ -2339,6 +2340,7 @@ uint16_t ptp_mtpz_opensecuresyncsession (PTPParams* params, unsigned char *hash)
 
 unsigned char* ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char **out_random);
 unsigned char* ptp_mtpz_makeconfirmationmessage (unsigned char *hash, unsigned int *out_len);
+#endif /* INCLUDE_MTPZ */
 
 /* Eastman Kodak extensions */
 uint16_t ptp_ek_9007 (PTPParams* params, unsigned char **serial, unsigned int *size);

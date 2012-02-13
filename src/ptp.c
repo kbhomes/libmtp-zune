@@ -25,8 +25,11 @@
 #define _BSD_SOURCE
 #include "config.h"
 #include "ptp.h"
+
+#ifdef INCLUDE_MTPZ
 #include "mtpz-crypto.h"
 #include "mtpz-data.h"
+#endif
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -2834,6 +2837,8 @@ ptp_mtp_setobjectproplist (PTPParams* params, MTPProperties *props, int nrofprop
 	return ret;
 }
 
+#ifdef INCLUDE_MTPZ
+
 /* Microsoft MTPZ extensions */
 
 uint16_t
@@ -3257,6 +3262,8 @@ ptp_mtpz_makeconfirmationmessage (unsigned char *hash, unsigned int *out_len)
 
 	return message;
 }
+
+#endif /* INCLUDE_MTPZ */
 
 /****** CHDK interface ******/
 

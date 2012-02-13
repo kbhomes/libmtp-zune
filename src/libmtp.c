@@ -2034,6 +2034,7 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device(LIBMTP_raw_device_t *rawdevice)
   if (mtp_device == NULL)
     return NULL;
 
+#ifdef INCLUDE_MTPZ
   // Check for MTPZ devices.
   {
     LIBMTP_device_extension_t *tmpext = mtp_device->extensions;
@@ -2050,6 +2051,7 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device(LIBMTP_raw_device_t *rawdevice)
       tmpext = tmpext->next;
     }
   }
+#endif /* INCLUDE_MTPZ */
 
   // Set up this device as cached
   mtp_device->cached = 1;
