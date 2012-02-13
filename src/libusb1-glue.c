@@ -3,8 +3,8 @@
  * Low-level USB interface glue towards libusb.
  *
  * Copyright (C) 2005-2007 Richard A. Low <richard@wentnet.com>
- * Copyright (C) 2005-2011 Linus Walleij <triad@df.lth.se>
- * Copyright (C) 2006-2011 Marcus Meissner
+ * Copyright (C) 2005-2012 Linus Walleij <triad@df.lth.se>
+ * Copyright (C) 2006-2012 Marcus Meissner
  * Copyright (C) 2007 Ted Bullock
  * Copyright (C) 2008 Chris Bagwell <chris@cnpbagwell.com>
  *
@@ -237,19 +237,20 @@ static int probe_device_descriptor(libusb_device *dev, FILE *dumpfile)
     return 0;
   }
 
-  /* Attempt to open Device on this port */
+  /*
+   * Attempt to open Device on this port
+   *
+   * TODO: is there a way to check the number of endpoints etc WITHOUT
+   * opening the device? Some color calibration devices are REALLY
+   * sensitive to this, and I found a Canon custom scanner that doesn't
+   * like it at all either :-(
+   */
   ret = libusb_open(dev, &devh);
   if (ret != LIBUSB_SUCCESS) {
     /* Could not open this device */
     return 0;
   }
 
-  /*
-   * This sometimes crashes on the j for loop below
-   * I think it is because config is NULL yet
-   * dev->descriptor.bNumConfigurations > 0
-   * this check should stop this
-   */
   /*
    * Loop over the device configurations and interfaces. Nokia MTP-capable
    * handsets (possibly others) typically have the string "MTP" in their
@@ -301,9 +302,11 @@ static int probe_device_descriptor(libusb_device *dev, FILE *dumpfile)
 	      fprintf(dumpfile, "   Found PTP device, check vendor "
 		      "extension...\n");
 	    }
-	    // This is where we may insert code to open a PTP
-	    // session and query the vendor extension ID to see
-	    // if it is 0xffffffff, i.e. MTP according to the spec.
+	    /*
+	     * This is where we may insert code to open a PTP
+	     * session and query the vendor extension ID to see
+	     * if it is 0xffffffff, i.e. MTP according to the spec.
+	     */
 	    if (was_mtp_extension) {
 	      libusb_close(devh);
 	      return 1;
@@ -567,12 +570,12 @@ int LIBMTP_Check_Specific_Device(int busno, int devno)
 
   nrofdevs = libusb_get_device_list (NULL, &devs);
   for (i = 0; i < nrofdevs ; i++ ) {
-/*
-    if (bus->location != busno)
+
+    if (libusb_get_bus_number(devs[i]) != busno)
       continue;
-    if (dev->devnum != devno)
+    if (libusb_get_device_address(devs[i]) != devno)
       continue;
-*/
+
       if (probe_device_descriptor(devs[i], NULL))
 	return 1;
   }
@@ -1166,7 +1169,7 @@ ptp_usb_sendreq (PTPParams* params, PTPContainer* req)
 		&written
 	);
 	ptp_exit_send_memory_handler (&memhandler);
-	if (ret!=PTP_RC_OK && ret!=PTP_ERROR_CANCEL) {
+	if (ret != PTP_RC_OK && ret != PTP_ERROR_CANCEL) {
 		ret = PTP_ERROR_IO;
 	}
 	if (written != towrite && ret != PTP_ERROR_CANCEL && ret != PTP_ERROR_IO) {
@@ -1221,7 +1224,7 @@ ptp_usb_senddata (PTPParams* params, PTPContainer* ptp,
 	/* send first part of data */
 	ret = ptp_write_func(wlen, &memhandler, params->data, &written);
 	ptp_exit_send_memory_handler (&memhandler);
-	if (ret!=PTP_RC_OK) {
+	if (ret != PTP_RC_OK) {
 		return ret;
 	}
 	if (size <= datawlen) return ret;
@@ -1238,7 +1241,7 @@ ptp_usb_senddata (PTPParams* params, PTPContainer* ptp,
 		}
 		bytes_left_to_transfer -= written;
 	}
-	if (ret!=PTP_RC_OK && ret!=PTP_ERROR_CANCEL)
+	if (ret != PTP_RC_OK && ret != PTP_ERROR_CANCEL)
 		ret = PTP_ERROR_IO;
 	return ret;
 }
@@ -1287,7 +1290,7 @@ ptp_usb_getdata (PTPParams* params, PTPContainer* ptp, PTPDataHandler *handler)
 		unsigned long len, rlen;
 
 		ret = ptp_usb_getpacket(params, &usbdata, &rlen);
-		if (ret!=PTP_RC_OK) {
+		if (ret != PTP_RC_OK) {
 			ret = PTP_ERROR_IO;
 			break;
 		}
@@ -1442,7 +1445,7 @@ ptp_usb_getdata (PTPParams* params, PTPContainer* ptp, PTPDataHandler *handler)
 				    handler,
 				    params->data, &rlen, 1);
 
-		if (ret!=PTP_RC_OK) {
+		if (ret != PTP_RC_OK) {
 		  break;
 		}
 	} while (0);
@@ -1475,7 +1478,7 @@ ptp_usb_getresp (PTPParams* params, PTPContainer* resp)
 	  ret = ptp_usb_getpacket(params, &usbresp, &rlen);
 	}
 
-	if (ret!=PTP_RC_OK) {
+	if (ret != PTP_RC_OK) {
 		ret = PTP_ERROR_IO;
 	} else
 	if (dtoh16(usbresp.type)!=PTP_USB_CONTAINER_RESPONSE) {
@@ -1487,7 +1490,7 @@ ptp_usb_getresp (PTPParams* params, PTPContainer* resp)
 
 	LIBMTP_USB_DEBUG("%04x\n", ret);
 
-	if (ret!=PTP_RC_OK) {
+	if (ret != PTP_RC_OK) {
 /*		libusb_glue_error (params,
 		"PTP: request code 0x%04x getting resp error 0x%04x",
 			resp->Code, ret);*/
@@ -1536,13 +1539,13 @@ ptp_usb_event (PTPParams* params, PTPContainer* event, int wait)
 	ret = PTP_RC_OK;
 	switch(wait) {
 	case PTP_EVENT_CHECK:
-                result=USB_BULK_READ(ptp_usb->handle,
+                result = USB_BULK_READ(ptp_usb->handle,
 				     ptp_usb->intep,
 				     (unsigned char *) &usbevent,
 				     sizeof(usbevent),
 				     &xread,
 				     0);
-		if (result==0)
+		if (xread == 0)
 		  result = USB_BULK_READ(ptp_usb->handle,
 					 ptp_usb->intep,
 					 (unsigned char *) &usbevent,
@@ -1552,13 +1555,13 @@ ptp_usb_event (PTPParams* params, PTPContainer* event, int wait)
 		if (result < 0) ret = PTP_ERROR_IO;
 		break;
 	case PTP_EVENT_CHECK_FAST:
-                result=USB_BULK_READ(ptp_usb->handle,
+                result = USB_BULK_READ(ptp_usb->handle,
 				     ptp_usb->intep,
 				     (unsigned char *) &usbevent,
 				     sizeof(usbevent),
 				     &xread,
 				     ptp_usb->timeout);
-		if (result==0)
+		if (xread == 0)
 		  result = USB_BULK_READ(ptp_usb->handle,
 					 ptp_usb->intep,
 					 (unsigned char *) &usbevent,
@@ -1568,15 +1571,15 @@ ptp_usb_event (PTPParams* params, PTPContainer* event, int wait)
 		if (result < 0) ret = PTP_ERROR_IO;
 		break;
 	default:
-		ret=PTP_ERROR_BADPARAM;
+		ret = PTP_ERROR_BADPARAM;
 		break;
 	}
-	if (ret!=PTP_RC_OK) {
+	if (ret != PTP_RC_OK) {
 		libusb_glue_error (params,
 			"PTP: reading event an error 0x%04x occurred", ret);
 		return PTP_ERROR_IO;
 	}
-	rlen = result;
+	rlen = xread;
 	if (rlen < 8) {
 		libusb_glue_error (params,
 			"PTP: reading event an short read of %ld bytes occurred", rlen);
