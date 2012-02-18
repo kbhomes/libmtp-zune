@@ -43,6 +43,10 @@
 #include "playlist-spl.h"
 #include "util.h"
 
+#ifdef INCLUDE_MTPZ
+#include "mtpz-data.h"
+#endif
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -748,6 +752,16 @@ void LIBMTP_Init(void)
 
   init_filemap();
   init_propertymap();
+
+#ifdef INCLUDE_MTPZ
+  extern int use_mtpz;
+  
+  if (mtpz_loaddata() == -1)
+    use_mtpz = 0;
+  else
+	use_mtpz = 1;
+#endif
+
   return;
 }
 
@@ -2036,6 +2050,7 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device(LIBMTP_raw_device_t *rawdevice)
 
 #ifdef INCLUDE_MTPZ
   // Check for MTPZ devices.
+  if (use_mtpz)
   {
     LIBMTP_device_extension_t *tmpext = mtp_device->extensions;
  

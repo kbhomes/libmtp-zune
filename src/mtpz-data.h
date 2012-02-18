@@ -24,41 +24,119 @@
  * </code>
  */
 
-static const unsigned char *MTPZ_MODULUS = (const unsigned char *)"CAD0D4C357342DD7AD959A5029D3D316972B9B9FE234F08BA7B6BFF3B522505B16F52D218C693597B2840F90807A7F77899D7454DBC2011724D45603A136682C3B4FA43A21B201FF3D8EFE16CDDA5EA6D225DD74C68D09B84536D3B2292BEB83D1D0DBB692261EEB2EBEFEB21B1836C7E19864F4198CE84FE2033FBEFCD377E5";
-static const unsigned char *MTPZ_PRIVATE_KEY = (const unsigned char *)"79EE227B6DA9C905A92E0F9FB205CF19FDB811CF85471E765755DF00BD1CEC025742FEE6F46B2BF50F35A5C5D1F7D33A2259AEDE755FA5182CE41AF203B199DE2BA5CF801FCB4C8863B3C40CFDB18C9985DDAD8710618802FD8969127C5F0FD52931F74A11082E27890CFBD11AE21B3611E54212D9E4269801F84D4F7E4EA601";
-static const unsigned char *MTPZ_PUBLIC_EXPONENT = (const unsigned char *)"10001";	
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
+/* The ~/.mtpz-data file contains all four necessary pieces of data:
+ *
+ *   public exponent
+ *   modulus
+ *   private key
+ *   certificate data
+ *
+ * These four pieces of data are each stored in hex representation,
+ * separated by newline characters.
+*/
 
-static const char *MTPZ_CERTIFICATES =
-		"\x02\x00\x00\x01\x35\x01\x00\x00\x00\x00\xB5\x01\x00\x00\x00\x01\x00\x00\x00\x00"
-		"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12\x5A\x75\x6E\x65\x20\x53"
-		"\x6F\x66\x74\x77\x61\x72\x65\x20\x43\x41\x20\x31\x00\x01\x00\x01\x00\x80\x33\x6E"
-		"\xE6\xAA\x07\xBF\xB3\xFF\xD0\x40\x24\xCE\xC3\x8B\xE6\x49\x7E\xF6\x0E\x3D\x7F\x68"
-		"\x2E\x0F\xF1\x5E\x6C\x65\xFF\x61\x3B\xDE\x17\x6F\xAD\x71\x37\x88\x4E\x80\xA8\x13"
-		"\xCF\x53\xC3\x10\x1A\xA5\x1B\x9E\x4F\x54\xB2\x4F\xD5\x14\xCD\xC5\x09\xB6\xB7\x1E"
-		"\x1F\x48\x51\x3D\xF0\x64\x44\xD9\xB5\x59\x63\xE8\x12\x1C\x4C\x69\xB6\x7D\x6A\x13"
-		"\x14\xF9\x73\xC9\x58\x5C\x29\xBB\x99\x0A\xD7\xFD\x15\x1D\xBB\xCB\x4F\x9E\xD7\xDF"
-		"\xE2\x92\xBA\x4E\xD9\xC6\xAC\xF5\x8E\x6A\xDE\xEF\x5B\x87\x7A\x1C\x15\x45\x74\x26"
-		"\x34\x91\x69\x46\x45\x9B\x09\x4B\x25\x9E\xD8\x5E\xF0\x2B\x08\xA3\x18\xE6\x7A\xFD"
-		"\x68\xC2\x89\xA8\xC6\xA6\x1B\xC8\x02\x3C\xA8\x7F\xE3\x67\xBD\xCC\x08\x56\xC3\xD1"
-		"\x57\x58\xC8\x66\xE5\x3F\xB5\x2E\x86\xEC\x56\x9C\x9C\x07\x0A\x22\x17\x4F\xBD\x7C"
-		"\x4D\xCD\x39\x5E\xC6\x85\x30\x16\x34\x51\xCE\x1F\x58\x80\x44\xA0\x6E\xBB\x95\xA6"
-		"\xD4\xBE\x68\xB0\x89\xA4\xF2\x5A\x61\x2F\xFC\xEA\x56\xC1\xC3\xF8\xA6\x88\x0C\x05"
-		"\x76\xF2\x65\x74\xB6\x4F\xF8\x3D\x28\x68\xF0\xFE\x36\x96\xBC\x84\x25\x48\x7A\xE0"
-		"\x62\xD4\x8A\xAD\xFD\x08\x8A\x97\x87\xB8\x06\x81\x0B\xED\x00\x00\x01\x37\x01\x00"
-		"\x00\x00\x00\xB7\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-		"\x00\x00\x00\x00\x00\x00\x14\x5A\x75\x6E\x65\x20\x53\x6F\x66\x74\x77\x61\x72\x65"
-		"\x20\x4C\x65\x61\x66\x20\x31\x00\x01\x00\x01\x00\x80\xE5\x77\xD3\xFC\xBE\x3F\x03"
-		"\xE2\x4F\xE8\x8C\x19\xF4\x64\x98\xE1\xC7\x36\x18\x1B\xB2\xFE\xBE\x2E\xEB\x1E\x26"
-		"\x92\xB6\xDB\xD0\xD1\x83\xEB\x2B\x29\xB2\xD3\x36\x45\xB8\x09\x8D\xC6\x74\xDD\x25"
-		"\xD2\xA6\x5E\xDA\xCD\x16\xFE\x8E\x3D\xFF\x01\xB2\x21\x3A\xA4\x4F\x3B\x2C\x68\x36"
-		"\xA1\x03\x56\xD4\x24\x17\x01\xC2\xDB\x54\x74\x9D\x89\x77\x7F\x7A\x80\x90\x0F\x84"
-		"\xB2\x97\x35\x69\x8C\x21\x2D\xF5\x16\x5B\x50\x22\xB5\xF3\xBF\xB6\xA7\x8B\xF0\x34"
-		"\xE2\x9F\x9B\x2B\x97\x16\xD3\xD3\x29\x50\x9A\x95\xAD\xD7\x2D\x34\x57\xC3\xD4\xD0"
-		"\xCA\x7E\xEA\xC9\x77\x6F\x4D\x73\xA4\xAA\xFD\x89\x6B\xAA\x5A\x86\x85\xC0\x5D\x5B"
-		"\x74\x66\x65\x21\x84\x81\x67\x5E\xD6\x29\xB2\x55\x3A\x9D\xF0\x3D\x74\x58\x66\xC5"
-		"\xCF\x24\x03\x51\xA7\x6C\x6D\xBB\xD0\x28\x30\xE5\xF4\x72\xE2\xAD\x24\x58\x7C\x7C"
-		"\xAB\x60\x18\xFD\xD9\x34\xC0\x93\xDF\x41\xCA\xB6\x18\x7E\x6E\x1E\xE9\xBB\x8D\xD5"
-		"\x99\xF9\xA2\x10\xF4\x05\x1F\xCD\xFD\x55\x28\x8D\x97\x61\xCA\x22\xC3\x21\x9E\x72"
-		"\x24\x76\x46\xAB\x50\x50\xB0\xB2\xC7\x7F\x1D\xFB\x6F\x95\x45\x64\x03\x61\xA2\x7C"
-		"\xAF\xCC\x59\xF3\x24\x42\xE2\x1B\x7B";
+int use_mtpz;
+
+unsigned char *MTPZ_PUBLIC_EXPONENT;
+unsigned char *MTPZ_MODULUS;
+unsigned char *MTPZ_PRIVATE_KEY;
+char *MTPZ_CERTIFICATES;
+
+// Strip the trailing newline from fgets().
+static char *fgets_strip(char * str, int num, FILE * stream)
+{
+	char *result = str;
+
+	if ((result = fgets(str, num, stream)))
+	{
+		size_t newlen = strlen(result);
+
+		if (result[newlen - 1] == '\n') 
+			result[newlen - 1] = '\0';
+	}
+
+	return result;
+}
+
+static char *hex_to_bytes(char *hex, size_t len)
+{
+	if (len % 2)
+		return NULL;
+
+	char *bytes = malloc(len / 2);
+	unsigned int u;
+	int i = 0;
+
+	while (i < len && sscanf(hex + i, "%2x", &u) == 1)
+	{
+		bytes[i / 2] = u;
+		i += 2;
+	}
+
+	return bytes;
+}
+
+static int mtpz_loaddata()
+{	
+	char *home = getenv("HOME");
+	if (!home)
+	{
+		printf("Error: Unable to determine user's home directory.\n");
+		return -1;	
+	}
+
+	int plen = strlen(home) + strlen("/.mtpz-data") + 1;
+	char path[plen];
+	sprintf(path, "%s/.mtpz-data", home);
+
+	FILE *fdata = fopen(path, "r");
+	if (!fdata)
+	{
+		printf("Error: Unable to open ~/.mtpz-data for reading.\n");
+		return -1;
+	}
+
+	// Should only be six characters in length, but fgets will encounter a newline and stop.
+	MTPZ_PUBLIC_EXPONENT = (unsigned char *)fgets_strip((char *)malloc(8), 8, fdata);
+	if (!MTPZ_PUBLIC_EXPONENT)
+	{
+		printf("Error: Unable to read MTPZ public exponent from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	// Should only be 256 characters in length, but fgets will encounter a newline and stop.
+	MTPZ_MODULUS = (unsigned char *)fgets_strip((char *)malloc(260), 260, fdata);
+	if (!MTPZ_MODULUS)
+	{
+		printf("Error: Unable to read MTPZ modulus from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	// Should only be 256 characters in length, but fgets will encounter a newline and stop.
+	MTPZ_PRIVATE_KEY = (unsigned char *)fgets_strip((char *)malloc(260), 260, fdata);
+	if (!MTPZ_PRIVATE_KEY)
+	{
+		printf("Error: Unable to read MTPZ private key from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	// Should only be 1258 characters in length, but fgets will encounter the end of the file and stop.
+	char *hexcerts = fgets_strip((char *)malloc(1260), 1260, fdata);
+	if (!hexcerts)
+	{
+		printf("Error: Unable to read MTPZ certificates from ~/.mtpz-data\n");
+		return -1;
+	}
+	MTPZ_CERTIFICATES = hex_to_bytes(hexcerts, strlen(hexcerts));
+	if (!MTPZ_CERTIFICATES)
+	{
+		printf("Error: Unable to parse MTPZ certificates from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	return 0;
+}

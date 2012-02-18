@@ -2926,6 +2926,10 @@ ptp_mtpz_resethandshake (PTPParams* params)
 	{
 		printf("success.\n");
 	}
+	else
+	{
+		printf("failure.\n");
+	}
 
 	return ret;
 }
@@ -2940,6 +2944,9 @@ ptp_mtpz_sendapplicationcertificatemessage (PTPParams* params, unsigned char **o
 	unsigned int len;
 	unsigned char* applicationCertificateMessage = ptp_mtpz_makeapplicationcertificatemessage(&len, out_random);
 
+	if (!applicationCertificateMessage)
+		return -1;
+
 	PTP_CNT_INIT(ptp);
 	ptp.Code=PTP_OC_MTP_WMDRMPD_SendWMDRMPDAppRequest;
 	size=len;
@@ -2948,6 +2955,10 @@ ptp_mtpz_sendapplicationcertificatemessage (PTPParams* params, unsigned char **o
 	if (ret == PTP_RC_OK)
 	{
 		printf("success.\n");
+	}
+	else
+	{
+		printf("failure.\n");
 	}
 
 	free(applicationCertificateMessage);
@@ -3000,6 +3011,13 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 		memset(msg_dec, 0, 128);
 
 		mtpz_rsa_t *rsa = mtpz_rsa_init(MTPZ_MODULUS, MTPZ_PRIVATE_KEY, MTPZ_PUBLIC_EXPONENT);
+		if (!rsa)
+		{
+			printf("failure (could not instantiate RSA object).\n");
+			free(message);
+			free(msg_dec);
+			return -1;
+		}
 
 		if (mtpz_rsa_decrypt(128, (unsigned char *)message, 128, (unsigned char *)msg_dec, rsa) == 0)
 		{
@@ -3008,7 +3026,7 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 			free(message);
 			free(msg_dec);
 			mtpz_rsa_free(rsa);
-			return ret;
+			return -1;
 		}
 
 		mtpz_rsa_free(rsa);
@@ -3224,6 +3242,13 @@ ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char
 
 	// Take care of some RSA jazz.
 	mtpz_rsa_t *rsa = mtpz_rsa_init(MTPZ_MODULUS, MTPZ_PRIVATE_KEY, MTPZ_PUBLIC_EXPONENT);
+	if (!rsa)
+	{
+		printf("failure (could not instantiate RSA object).\n");
+		*out_len = 0;
+		return NULL;
+	}
+	
 	char *signature = (char *)malloc(128);	
 	memset(signature, 0, 128);
 	mtpz_rsa_sign(128, (unsigned char *)odata, 128, (unsigned char *)signature, rsa);
