@@ -2328,19 +2328,13 @@ uint16_t ptp_mtp_sendobjectproplist (PTPParams* params, uint32_t* store, uint32_
 				     uint16_t objecttype, uint64_t objectsize, MTPProperties *props, int nrofprops);
 uint16_t ptp_mtp_setobjectproplist (PTPParams* params, MTPProperties *props, int nrofprops);
 
-#ifdef INCLUDE_MTPZ
 /* Microsoft MTPZ (Zune) extensions */
-uint16_t ptp_mtpz_handshake (PTPParams* params);
-uint16_t ptp_mtpz_setsessioninitiatorinfo (PTPParams* params);
-uint16_t ptp_mtpz_resethandshake (PTPParams* params);
-uint16_t ptp_mtpz_sendapplicationcertificatemessage (PTPParams* params, unsigned char **out_random);
-uint16_t ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, unsigned char **calculatedHash);
-uint16_t ptp_mtpz_sendconfirmationmessage (PTPParams* params, unsigned char *hash);
-uint16_t ptp_mtpz_opensecuresyncsession (PTPParams* params, unsigned char *hash);
-
-unsigned char* ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char **out_random);
-unsigned char* ptp_mtpz_makeconfirmationmessage (unsigned char *hash, unsigned int *out_len);
-#endif /* INCLUDE_MTPZ */
+uint16_t ptp_mtpz_sendwmdrmpdapprequest (PTPParams*, unsigned char *, uint32_t);
+#define  ptp_mtpz_resethandshake(params) ptp_generic_no_data(params, PTP_OC_MTP_WMDRMPD_EndTrustedAppSession, 0)
+uint16_t ptp_mtpz_getwmdrmpdappresponse (PTPParams*, unsigned char **, uint32_t*);
+#define  ptp_mtpz_wmdrmpd_enabletrustedfilesoperations(params,hash1,hash2,hash3,hash4) \
+	 ptp_generic_no_data(params, PTP_OC_MTP_WMDRMPD_EnableTrustedFilesOperations, 4,\
+		hash1, hash2, hash3, hash4)
 
 /* Eastman Kodak extensions */
 uint16_t ptp_ek_9007 (PTPParams* params, unsigned char **serial, unsigned int *size);

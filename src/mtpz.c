@@ -1,6 +1,5 @@
 /**
- * \file mtpz-crypto.h
- * Utilities for interfacing with the MTPZ (e.g.: Zune) devices. 
+ * \file mtpz.c
  *
  * Copyright (C) 2011-2012 Sajid Anwar <sajidanwar94@gmail.com>
  *
@@ -19,20 +18,146 @@
  * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
  * Boston, MA 02111-1307, USA.
  *
- * <code>
- * #include <mtpz-crypto.h>
- * </code>
+ * This file provides mtp zune cryptographic setup interfaces.
  */
+#include "config.h"
+#include "libmtp.h"
+#include "unicode.h"
+#include "ptp.h"
+#include "libusb-glue.h"
+#include "device-flags.h"
+#include "playlist-spl.h"
+#include "util.h"
+#include "mtpz.h"
+
+#ifdef INCLUDE_MTPZ
+#include <gcrypt.h>
+#endif
 
 #include <stdlib.h>
-#include <stdint.h>
-#include <stdio.h>
+#include <unistd.h>
 #include <string.h>
-#include <math.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <errno.h>
 
-#include <gcrypt.h>
 
+/* Microsoft MTPZ extensions */
+
+#ifdef INCLUDE_MTPZ
+/* The ~/.mtpz-data file contains all four necessary pieces of data:
+ *
+ *   public exponent
+ *   modulus
+ *   private key
+ *   certificate data
+ *
+ * These four pieces of data are each stored in hex representation,
+ * separated by newline characters.
+*/
+
+int use_mtpz;
+
+static unsigned char *MTPZ_PUBLIC_EXPONENT;
+static unsigned char *MTPZ_MODULUS;
+static unsigned char *MTPZ_PRIVATE_KEY;
+static char *MTPZ_CERTIFICATES;
+
+// Strip the trailing newline from fgets().
+static char *fgets_strip(char * str, int num, FILE * stream)
+{
+	char *result = str;
+
+	if ((result = fgets(str, num, stream)))
+	{
+		size_t newlen = strlen(result);
+
+		if (result[newlen - 1] == '\n') 
+			result[newlen - 1] = '\0';
+	}
+
+	return result;
+}
+
+static char *hex_to_bytes(char *hex, size_t len)
+{
+	if (len % 2)
+		return NULL;
+
+	char *bytes = malloc(len / 2);
+	unsigned int u;
+	int i = 0;
+
+	while (i < len && sscanf(hex + i, "%2x", &u) == 1)
+	{
+		bytes[i / 2] = u;
+		i += 2;
+	}
+
+	return bytes;
+}
+
+int mtpz_loaddata()
+{	
+	char *home = getenv("HOME");
+	if (!home)
+	{
+		LIBMTP_INFO("Error: Unable to determine user's home directory.\n");
+		return -1;	
+	}
+
+	int plen = strlen(home) + strlen("/.mtpz-data") + 1;
+	char path[plen];
+	sprintf(path, "%s/.mtpz-data", home);
+
+	FILE *fdata = fopen(path, "r");
+	if (!fdata)
+	{
+		LIBMTP_INFO("Error: Unable to open ~/.mtpz-data for reading.\n");
+		return -1;
+	}
+
+	// Should only be six characters in length, but fgets will encounter a newline and stop.
+	MTPZ_PUBLIC_EXPONENT = (unsigned char *)fgets_strip((char *)malloc(8), 8, fdata);
+	if (!MTPZ_PUBLIC_EXPONENT)
+	{
+		LIBMTP_INFO("Error: Unable to read MTPZ public exponent from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	// Should only be 256 characters in length, but fgets will encounter a newline and stop.
+	MTPZ_MODULUS = (unsigned char *)fgets_strip((char *)malloc(260), 260, fdata);
+	if (!MTPZ_MODULUS)
+	{
+		LIBMTP_INFO("Error: Unable to read MTPZ modulus from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	// Should only be 256 characters in length, but fgets will encounter a newline and stop.
+	MTPZ_PRIVATE_KEY = (unsigned char *)fgets_strip((char *)malloc(260), 260, fdata);
+	if (!MTPZ_PRIVATE_KEY)
+	{
+		LIBMTP_INFO("Error: Unable to read MTPZ private key from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	// Should only be 1258 characters in length, but fgets will encounter the end of the file and stop.
+	char *hexcerts = fgets_strip((char *)malloc(1260), 1260, fdata);
+	if (!hexcerts)
+	{
+		LIBMTP_INFO("Error: Unable to read MTPZ certificates from ~/.mtpz-data\n");
+		return -1;
+	}
+	MTPZ_CERTIFICATES = hex_to_bytes(hexcerts, strlen(hexcerts));
+	if (!MTPZ_CERTIFICATES)
+	{
+		LIBMTP_INFO("Error: Unable to parse MTPZ certificates from ~/.mtpz-data\n");
+		return -1;
+	}
+
+	return 0;
+}
 /* MTPZ RSA */
 
 typedef struct mtpz_rsa_struct
@@ -51,15 +176,15 @@ int mtpz_rsa_sign(int flen, unsigned char *from, int tlen, unsigned char *to, mt
 #define MTPZ_HASHSTATE_84 5
 #define MTPZ_HASHSTATE_88 6
 
-char *mtpz_hash_init_state();
-void mtpz_hash_reset_state(char *);
-void mtpz_hash_transform_hash(char *, char *, int);
-void mtpz_hash_finalize_hash(char *, char *);
-char *mtpz_hash_custom6A5DC(char *, char *, int, int);
+static char *mtpz_hash_init_state();
+static void mtpz_hash_reset_state(char *);
+static void mtpz_hash_transform_hash(char *, char *, int);
+static void mtpz_hash_finalize_hash(char *, char *);
+static char *mtpz_hash_custom6A5DC(char *, char *, int, int);
 
-void mtpz_hash_compute_hash(char *, char *, int);
-unsigned int mtpz_hash_f(int s, unsigned int x, unsigned int y, unsigned int z);
-unsigned int mtpz_hash_rotate_left(unsigned int x, int n);
+static void mtpz_hash_compute_hash(char *, char *, int);
+static unsigned int mtpz_hash_f(int s, unsigned int x, unsigned int y, unsigned int z);
+static unsigned int mtpz_hash_rotate_left(unsigned int x, int n);
 
 /* MTPZ encryption */
 
@@ -97,8 +222,8 @@ void mtpz_encryption_encrypt_mac(unsigned char *hash, unsigned int hash_length, 
 
 
 
-/* MTPZ RSA implementation */
 
+/* MTPZ RSA implementation */
 mtpz_rsa_t *mtpz_rsa_init(const unsigned char *str_modulus, const unsigned char *str_privkey, const unsigned char *str_pubexp)
 {
 	mtpz_rsa_t *rsa = (mtpz_rsa_t *)malloc(sizeof(mtpz_rsa_t));
@@ -169,7 +294,7 @@ int mtpz_rsa_sign(int flen, unsigned char *from, int tlen, unsigned char *to, mt
 
 /* MTPZ hashing implementation */
 
-char *mtpz_hash_init_state()
+static char *mtpz_hash_init_state()
 {
 	char *s = (char *)malloc(92);
 	
@@ -223,18 +348,11 @@ void mtpz_hash_transform_hash(char *state, char *msg, int len)
 		}
 	}	
 
-	if (0)
+	while (i > 63)
 	{
-		fprintf(stderr, "This segment of code in the original application is never reached.\n");
-	}
-	else
-	{
-		while (i > 63)
-		{
-			mtpz_hash_compute_hash(state, msg + j, 64);
-			j += 64;
-			i -= 64;
-		}
+		mtpz_hash_compute_hash(state, msg + j, 64);
+		j += 64;
+		i -= 64;
 	}
 
 	if (i != 0)
@@ -1312,3 +1430,333 @@ unsigned int mtpz_aes_gb9[] =
 	0x79B492A7,  0x70B999A9,   0x6BAE84BB,  0x62A38FB5,  0x5D80BE9F,  0x548DB591,   0x4F9AA883,  0x4697A38D, 
 };
 
+static uint16_t
+ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, unsigned char **calculatedHash)
+{
+	uint16_t ret;
+	unsigned int len;
+	unsigned char* response = NULL;
+
+	ret = ptp_mtpz_getwmdrmpdappresponse (params, &response, &len);
+	if (ret == PTP_RC_OK)
+	{
+		char *reader = (char *)response;
+		int i;
+
+		if (*(reader++) != '\x02')
+		{
+			return -1;
+		}
+
+		if (*(reader++) != '\x02')
+		{
+			return -1;
+		}
+
+		// Message is always 128 bytes.
+		reader++;
+		if (*(reader++) != '\x80')
+		{
+			return -1;
+		}
+
+		char *message = (char *)malloc(128);
+		memcpy(message, reader, 128);
+		reader += 128;
+
+		// Decrypt the hash-key-message..
+		char *msg_dec = (char *)malloc(128);
+		memset(msg_dec, 0, 128);
+
+		mtpz_rsa_t *rsa = mtpz_rsa_init(MTPZ_MODULUS, MTPZ_PRIVATE_KEY, MTPZ_PUBLIC_EXPONENT);
+		if (!rsa)
+		{
+			ptp_debug (params, "failure (could not instantiate RSA object).\n");
+			free(message);
+			free(msg_dec);
+			return -1;
+		}
+
+		if (mtpz_rsa_decrypt(128, (unsigned char *)message, 128, (unsigned char *)msg_dec, rsa) == 0)
+		{
+			ptp_debug (params, "failure (could not perform RSA decryption).\n");
+
+			free(message);
+			free(msg_dec);
+			mtpz_rsa_free(rsa);
+			return -1;
+		}
+
+		mtpz_rsa_free(rsa);
+		rsa = NULL;
+
+		char *state = mtpz_hash_init_state();
+		char *hash_key = (char *)malloc(16);
+		char *v10 = mtpz_hash_custom6A5DC(state, msg_dec + 21, 107, 20);
+
+		for (i = 0; i < 20; i++)
+			msg_dec[i + 1] ^= v10[i];
+
+		char *v11 = mtpz_hash_custom6A5DC(state, msg_dec + 1, 20, 107);
+
+		for (i = 0; i < 107; i++)
+			msg_dec[i + 21] ^= v11[i];
+
+		memcpy(hash_key, msg_dec + 112, 16);
+
+		// Encrypted message is 0x340 bytes.
+		reader += 2;
+		if (*(reader++) != '\x03' || *(reader++) != '\x40')
+		{
+			return -1;
+		}
+
+		unsigned char *act_msg = (unsigned char *)malloc(832);
+		unsigned char *act_reader = act_msg;
+		memcpy(act_msg, reader, 832);
+		reader = NULL;
+
+		mtpz_encryption_cipher_advanced((unsigned char *)hash_key, 16, act_msg, 832, 0);
+
+		act_reader++;
+		unsigned int certs_length = __builtin_bswap32(*(unsigned int *)(act_reader));
+		act_reader += 4;
+		act_reader += certs_length;
+
+		unsigned int rand_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		unsigned char *rand_data = (unsigned char *)malloc(rand_length);
+		memcpy(rand_data, act_reader, rand_length);
+		if (memcmp(rand_data, random, 16) != 0)
+		{
+			free(rand_data);
+			return -1;
+		}
+		free(rand_data);
+		act_reader += rand_length;
+
+		unsigned int dev_rand_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		act_reader += dev_rand_length;
+
+		act_reader++;
+
+		unsigned int sig_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		act_reader += sig_length;
+
+		act_reader++;
+
+		unsigned int machash_length = __builtin_bswap32(*(unsigned short *)(act_reader) << 16);
+		act_reader += 2;
+		unsigned char *machash_data = (unsigned char *)malloc(machash_length);
+		memcpy(machash_data, act_reader, machash_length);
+		act_reader += machash_length;
+	
+		*calculatedHash = machash_data;
+
+		LIBMTP_INFO("success.\n");
+
+		free(message);
+		free(msg_dec);
+		free(state);
+		free(v10);
+		free(v11);
+		free(act_msg);
+	}
+	else
+	{
+		ptp_debug (params, "failure (did not receive device's response).\n");
+	}
+
+	return ret;
+}
+
+static uint16_t
+ptp_mtpz_opensecuresyncsession (PTPParams* params, unsigned char *hash)
+{
+	unsigned char	mch[16];
+	uint32_t	*hashparams = (unsigned int *)mch;
+	unsigned int	macCount = *(unsigned int *)(hash + 16);
+	uint16_t	ret;
+
+	mtpz_encryption_encrypt_mac(hash, 16, (unsigned char *)(&macCount), 4, mch);
+
+	ret = ptp_mtpz_wmdrmpd_enabletrustedfilesoperations(params,
+		__builtin_bswap32(hashparams[0]), __builtin_bswap32(hashparams[1]),
+		__builtin_bswap32(hashparams[2]), __builtin_bswap32(hashparams[3]));
+	return ret;
+};
+
+static unsigned char *
+ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char **out_random)
+{
+	*out_len = 785;
+
+	unsigned char *acm = (unsigned char *)malloc(785);
+	unsigned char *target = acm;
+	memset(acm, 0, 785);
+
+	unsigned char *random = (unsigned char *)malloc(16);
+
+	int i = 0;
+	int certsLength = 0x275;
+
+	// Write the marker bytes, length of certificates, and certificates themselves.
+	*(target++) = '\x02';
+	*(target++) = '\x01';
+	*(target++) = '\x01';
+	*(target++) = '\x00';
+	*(target++) = '\x00';
+	*(target++) = '\x02';
+	*(target++) = '\x75';
+	memcpy(target, MTPZ_CERTIFICATES, certsLength);
+	target += certsLength;
+
+	// Write the random bytes.
+	*(target++) = '\x00';	*(target++) = '\x10';
+	srand(time(NULL));
+	
+	for (i = 0; i < 16; i++) 
+		*(random + i) = (unsigned char)(rand() % 256);
+	
+	*out_random = random;
+	memcpy(target, random, 16);
+	target += 16;
+
+	char *state = mtpz_hash_init_state();
+	char *v16 = (char *)malloc(28); memset(v16, 0, 28);
+	char *hash = (char *)malloc(20); memset(hash, 0, 20);
+	char *odata = (char *)malloc(128); memset(odata, 0, 128);
+	
+	mtpz_hash_reset_state(state);
+	mtpz_hash_transform_hash(state, (char *)acm + 2, (target - acm - 2));
+	mtpz_hash_finalize_hash(state, v16 + 8);
+
+	mtpz_hash_reset_state(state);
+	mtpz_hash_transform_hash(state, v16, 28);
+	mtpz_hash_finalize_hash(state, hash);
+
+	char *v17 = mtpz_hash_custom6A5DC(state, hash, 20, 107);
+
+	for (i = 0; i < 20; i++)
+		odata[107 + i] = hash[i];
+
+	odata[106] = '\x01';
+
+	if (v17 != NULL)
+	{
+		for (i = 0; i < 107; i++)
+			odata[i] ^= v17[i];
+
+		odata[0] &= 127;
+		odata[127] = 188;
+	}
+
+	// Free up some jazz.
+	free(state); state = NULL;
+	free(v16); v16 = NULL;
+	free(v17); v17 = NULL;
+	free(hash); hash = NULL;
+
+	// Take care of some RSA jazz.
+	mtpz_rsa_t *rsa = mtpz_rsa_init(MTPZ_MODULUS, MTPZ_PRIVATE_KEY, MTPZ_PUBLIC_EXPONENT);
+	if (!rsa)
+	{
+		LIBMTP_INFO("failure (could not instantiate RSA object).\n");
+		*out_len = 0;
+		return NULL;
+	}
+	
+	char *signature = (char *)malloc(128);	
+	memset(signature, 0, 128);
+	mtpz_rsa_sign(128, (unsigned char *)odata, 128, (unsigned char *)signature, rsa);
+
+	// Free some more things.
+	mtpz_rsa_free(rsa); rsa = NULL;
+	free(odata); odata = NULL;
+
+	// Write the signature + bytes.
+	*(target++) = '\x01'; *(target++) = '\x00'; *(target++) = '\x80';
+	memcpy(target, signature, 128);
+
+	// Kill target.
+	target = NULL;
+
+	return acm;
+};
+
+static unsigned char *
+ptp_mtpz_makeconfirmationmessage (unsigned char *hash, unsigned int *out_len)
+{
+	*out_len = 20;
+	unsigned char *message = (unsigned char *)malloc(20);
+	message[0] = (unsigned char)0x02;
+	message[1] = (unsigned char)0x03;
+	message[2] = (unsigned char)0x00;
+	message[3] = (unsigned char)0x10;
+
+	unsigned char *seed = (unsigned char *)malloc(16);
+	memset(seed, 0, 16);
+	seed[15] = (unsigned char)(0x01);
+
+	mtpz_encryption_encrypt_mac(hash, 16u, seed, 16u, message + 4);
+
+	free(seed);
+
+	return message;
+}
+
+uint16_t ptp_mtpz_handshake (PTPParams* params)
+{
+	uint16_t ret = PTP_RC_OK;
+	uint32_t size;
+	unsigned char *hash=NULL;
+	unsigned char *random=NULL;
+	PTPPropertyValue propval;
+	unsigned char*	applicationCertificateMessage;
+	unsigned char*	message;
+
+	/* FIXME: do other places of libmtp set it? should we set it? */
+	LIBMTP_INFO ("(MTPZ) Setting session initiator info: ");
+	propval.str = "libmtp/Sajid Anwar - MTPZClassDriver";
+	ret = ptp_setdevicepropvalue(params,
+		   PTP_DPC_MTP_SessionInitiatorInfo,
+		   &propval,
+		   PTP_DTC_STR);
+	if (ret != PTP_RC_OK)
+		return ret;
+
+	LIBMTP_INFO ("(MTPZ) Resetting handshake: ");
+	ret = ptp_mtpz_resethandshake(params);
+	if (ret != PTP_RC_OK)
+		return ret;
+
+	LIBMTP_INFO ("(MTPZ) Sending application certificate message: ");
+	applicationCertificateMessage = ptp_mtpz_makeapplicationcertificatemessage(&size, &random);
+	ret = ptp_mtpz_sendwmdrmpdapprequest (params, applicationCertificateMessage, size);
+	free (applicationCertificateMessage);
+	if (ret != PTP_RC_OK)
+		return ret;
+
+	LIBMTP_INFO ("(MTPZ) Getting and validating handshake response: ");
+	ret = ptp_mtpz_validatehandshakeresponse(params, random, &hash);
+	if (ret != PTP_RC_OK) 
+		goto free_random;
+
+	LIBMTP_INFO ("(MTPZ) Sending confirmation message: ");
+	message = ptp_mtpz_makeconfirmationmessage(hash, &size);
+        ret = ptp_mtpz_sendwmdrmpdapprequest (params, message, size);
+	if (ret != PTP_RC_OK)
+		goto free_hash;
+	free (message);
+
+	LIBMTP_INFO ("(MTPZ) Opening secure sync session: ");
+	ret = ptp_mtpz_opensecuresyncsession(params, hash);
+free_hash:
+	free(hash);
+free_random:
+	free(random);
+	return ret;
+}
+#endif /* INCLUDE_MTPZ */
