@@ -1471,7 +1471,7 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 		mtpz_rsa_t *rsa = mtpz_rsa_init(MTPZ_MODULUS, MTPZ_PRIVATE_KEY, MTPZ_PUBLIC_EXPONENT);
 		if (!rsa)
 		{
-			ptp_debug (params, "failure (could not instantiate RSA object).\n");
+			LIBMTP_INFO ("(MTPZ) Failure - could not instantiate RSA object.\n");
 			free(message);
 			free(msg_dec);
 			return -1;
@@ -1479,7 +1479,7 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 
 		if (mtpz_rsa_decrypt(128, (unsigned char *)message, 128, (unsigned char *)msg_dec, rsa) == 0)
 		{
-			ptp_debug (params, "failure (could not perform RSA decryption).\n");
+			LIBMTP_INFO ("(MTPZ) Failure - could not perform RSA decryption.\n");
 
 			free(message);
 			free(msg_dec);
@@ -1555,8 +1555,6 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 	
 		*calculatedHash = machash_data;
 
-		LIBMTP_INFO("success.\n");
-
 		free(message);
 		free(msg_dec);
 		free(state);
@@ -1566,7 +1564,7 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 	}
 	else
 	{
-		ptp_debug (params, "failure (did not receive device's response).\n");
+		LIBMTP_INFO ("(MTPZ) Failure - did not receive device's response.\n");
 	}
 
 	return ret;
@@ -1663,7 +1661,7 @@ ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char
 	mtpz_rsa_t *rsa = mtpz_rsa_init(MTPZ_MODULUS, MTPZ_PRIVATE_KEY, MTPZ_PUBLIC_EXPONENT);
 	if (!rsa)
 	{
-		LIBMTP_INFO("failure (could not instantiate RSA object).\n");
+		LIBMTP_INFO("(MTPZ) Failure - could not instantiate RSA object.\n");
 		*out_len = 0;
 		return NULL;
 	}
@@ -1718,7 +1716,7 @@ uint16_t ptp_mtpz_handshake (PTPParams* params)
 	unsigned char*	message;
 
 	/* FIXME: do other places of libmtp set it? should we set it? */
-	LIBMTP_INFO ("(MTPZ) Setting session initiator info: ");
+	LIBMTP_INFO ("(MTPZ) Setting session initiator info.\n");
 	propval.str = "libmtp/Sajid Anwar - MTPZClassDriver";
 	ret = ptp_setdevicepropvalue(params,
 		   PTP_DPC_MTP_SessionInitiatorInfo,
@@ -1727,31 +1725,31 @@ uint16_t ptp_mtpz_handshake (PTPParams* params)
 	if (ret != PTP_RC_OK)
 		return ret;
 
-	LIBMTP_INFO ("(MTPZ) Resetting handshake: ");
+	LIBMTP_INFO ("(MTPZ) Resetting handshake.\n");
 	ret = ptp_mtpz_resethandshake(params);
 	if (ret != PTP_RC_OK)
 		return ret;
 
-	LIBMTP_INFO ("(MTPZ) Sending application certificate message: ");
+	LIBMTP_INFO ("(MTPZ) Sending application certificate message.\n");
 	applicationCertificateMessage = ptp_mtpz_makeapplicationcertificatemessage(&size, &random);
 	ret = ptp_mtpz_sendwmdrmpdapprequest (params, applicationCertificateMessage, size);
 	free (applicationCertificateMessage);
 	if (ret != PTP_RC_OK)
 		return ret;
 
-	LIBMTP_INFO ("(MTPZ) Getting and validating handshake response: ");
+	LIBMTP_INFO ("(MTPZ) Getting and validating handshake response.\n");
 	ret = ptp_mtpz_validatehandshakeresponse(params, random, &hash);
 	if (ret != PTP_RC_OK) 
 		goto free_random;
 
-	LIBMTP_INFO ("(MTPZ) Sending confirmation message: ");
+	LIBMTP_INFO ("(MTPZ) Sending confirmation message.\n");
 	message = ptp_mtpz_makeconfirmationmessage(hash, &size);
         ret = ptp_mtpz_sendwmdrmpdapprequest (params, message, size);
 	if (ret != PTP_RC_OK)
 		goto free_hash;
 	free (message);
 
-	LIBMTP_INFO ("(MTPZ) Opening secure sync session: ");
+	LIBMTP_INFO ("(MTPZ) Opening secure sync session.\n");
 	ret = ptp_mtpz_opensecuresyncsession(params, hash);
 free_hash:
 	free(hash);

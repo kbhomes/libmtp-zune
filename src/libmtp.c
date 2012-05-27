@@ -2054,8 +2054,15 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device(LIBMTP_raw_device_t *rawdevice)
     {
       if (!strcmp(tmpext->name, "microsoft.com/MTPZ"))
       {
-	LIBMTP_INFO("MTPZ device detected. Authenticating...\n");
-	ptp_mtpz_handshake(mtp_device->params);
+	    LIBMTP_INFO("MTPZ device detected. Authenticating...\n");
+        if (PTP_RC_OK == ptp_mtpz_handshake(mtp_device->params))
+        {
+          LIBMTP_INFO ("(MTPZ) Successfully authenticated with device.\n\n");
+        }
+        else
+        {
+          LIBMTP_INFO ("(MTPZ) Failure - could not authenticate with device.\n\n");
+        }
 	break;
       }
       tmpext = tmpext->next;
