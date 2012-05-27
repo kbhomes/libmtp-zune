@@ -751,7 +751,7 @@ void LIBMTP_Init(void)
   init_filemap();
   init_propertymap();
 
-#ifdef INCLUDE_MTPZ
+#ifdef USE_MTPZ
   if (mtpz_loaddata() == -1)
     use_mtpz = 0;
   else
@@ -2044,7 +2044,7 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device(LIBMTP_raw_device_t *rawdevice)
   if (mtp_device == NULL)
     return NULL;
 
-#ifdef INCLUDE_MTPZ
+#ifdef USE_MTPZ
   /* Check for MTPZ devices. */
   if (use_mtpz)
   {

@@ -30,7 +30,7 @@
 #include "util.h"
 #include "mtpz.h"
 
-#ifdef INCLUDE_MTPZ
+#ifdef USE_MTPZ
 #include <gcrypt.h>
 #endif
 
@@ -45,7 +45,7 @@
 
 /* Microsoft MTPZ extensions */
 
-#ifdef INCLUDE_MTPZ
+#ifdef USE_MTPZ
 /* The ~/.mtpz-data file contains all four necessary pieces of data:
  *
  *   public exponent
@@ -1757,4 +1757,4 @@ free_random:
 	free(random);
 	return ret;
 }
-#endif /* INCLUDE_MTPZ */
+#endif /* USE_MTPZ */
