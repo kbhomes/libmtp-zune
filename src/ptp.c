@@ -1,7 +1,7 @@
 /* ptp.c
  *
  * Copyright (C) 2001-2004 Mariusz Woloszyn <emsi@ipartners.pl>
- * Copyright (C) 2003-2009 Marcus Meissner <marcus@jet.franken.de>
+ * Copyright (C) 2003-2012 Marcus Meissner <marcus@jet.franken.de>
  * Copyright (C) 2006-2008 Linus Walleij <triad@df.lth.se>
  * Copyright (C) 2007 Tero Saarni <tero.saarni@gmail.com>
  * Copyright (C) 2009 Axel Waggershauser <awagger@web.de>
@@ -699,7 +699,6 @@ ptp_getnumobjects (PTPParams* params, uint32_t storage,
 {
 	uint16_t ret;
 	PTPContainer ptp;
-	int len;
 
 	PTP_CNT_INIT(ptp);
 	ptp.Code=PTP_OC_GetNumObjects;
@@ -707,7 +706,6 @@ ptp_getnumobjects (PTPParams* params, uint32_t storage,
 	ptp.Param2=objectformatcode;
 	ptp.Param3=associationOH;
 	ptp.Nparam=3;
-	len=0;
 	ret=ptp_transaction(params, &ptp, PTP_DP_NODATA, 0, NULL, NULL);
 	if (ret == PTP_RC_OK) {
 		if (ptp.Nparam >= 1)
@@ -1633,6 +1631,13 @@ ptp_check_event (PTPParams *params) {
 		}
 		return PTP_RC_OK;
 	}
+	/* should not get here ... EOS has no normal PTP events and another queue handling. */
+	if (	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_CANON) &&
+		ptp_operation_issupported(params, PTP_OC_CANON_EOS_GetEvent)
+	) {
+		return PTP_RC_OK;
+	}
+
 	if (	(params->deviceinfo.VendorExtensionID == PTP_VENDOR_CANON) &&
 		ptp_operation_issupported(params, PTP_OC_CANON_CheckEvent)
 	) {
@@ -1829,6 +1834,40 @@ ptp_canon_eos_getstorageinfo (PTPParams* params, uint32_t p1, unsigned char **da
 	return ret;
 }
 
+uint16_t
+ptp_canon_eos_getobjectinfoex (
+	PTPParams* params, uint32_t storageid, uint32_t oid, uint32_t unk,
+	PTPCANONFolderEntry **entries, unsigned int *nrofentries
+) {
+	PTPContainer	ptp;
+	unsigned int	i, size = 0;
+	unsigned char	*data, *xdata;
+	uint16_t	ret;
+
+	data = NULL;
+	PTP_CNT_INIT(ptp);
+	ptp.Code 	= PTP_OC_CANON_EOS_GetObjectInfoEx;
+	ptp.Nparam	= 3;
+	ptp.Param1	= storageid;
+	ptp.Param2	= oid;
+	ptp.Param3	= unk;
+	ret = ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &data, &size);
+	if (ret != PTP_RC_OK)
+		return ret;
+
+	*nrofentries = dtoh32a(data);
+	*entries = malloc(*nrofentries * sizeof(PTPCANONFolderEntry));
+	if (!*entries)
+		return PTP_RC_GeneralError;
+
+	xdata = data+sizeof(uint32_t);
+	for (i=0;i<*nrofentries;i++) {
+		ptp_unpack_Canon_EOS_FE (params, &xdata[4], &((*entries)[i]));
+		xdata += dtoh32a(xdata);
+	}
+	return PTP_RC_OK;
+}
+
 /**
  * ptp_canon_eos_getpartialobject:
  * 
@@ -1902,6 +1941,15 @@ ptp_canon_eos_setdevicepropvalue (PTPParams* params,
 		if (!data) return PTP_RC_GeneralError;
 		params->canon_props[i].dpd.CurrentValue.u16 = value->u16;
 		ptp_pack_EOS_ImageFormat( params, data + 8, value->u16 );
+		break;
+	case PTP_DPC_CANON_EOS_CustomFuncEx:
+		/* special handling of CustomFuncEx properties */
+		ptp_debug (params, "ptp2/ptp_canon_eos_setdevicepropvalue: setting EOS prop %x to %s",propcode,value->str);
+		size = 8 + ptp_pack_EOS_CustomFuncEx( params, NULL, value->str );
+		data = malloc( size );
+		if (!data) return PTP_RC_GeneralError;
+		params->canon_props[i].dpd.CurrentValue.str = strdup( value->str );
+		ptp_pack_EOS_CustomFuncEx( params, data + 8, value->str );
 		break;
 	default:
 		if (datatype != PTP_DTC_STR) {
@@ -2776,6 +2824,29 @@ ptp_mtp_getobjectproplist (PTPParams* params, uint32_t handle, MTPProperties **p
 	ptp.Param3 = 0xFFFFFFFFU;  /* 0xFFFFFFFFU should be "all properties" */
 	ptp.Param4 = 0x00000000U;
 	ptp.Param5 = 0xFFFFFFFFU;  /* means - return full tree below the Param1 handle */
+	ptp.Nparam = 5;
+	ret = ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &opldata, &oplsize);  
+	if (ret == PTP_RC_OK) *nrofprops = ptp_unpack_OPL(params, opldata, props, oplsize);
+	if (opldata != NULL)
+		free(opldata);
+	return ret;
+}
+
+uint16_t
+ptp_mtp_getobjectproplist_single (PTPParams* params, uint32_t handle, MTPProperties **props, int *nrofprops)
+{
+	uint16_t ret;
+	PTPContainer ptp;
+	unsigned char* opldata = NULL;
+	unsigned int oplsize;
+
+	PTP_CNT_INIT(ptp);
+	ptp.Code = PTP_OC_MTP_GetObjPropList;
+	ptp.Param1 = handle;
+	ptp.Param2 = 0x00000000U;  /* 0x00000000U should be "all formats" */
+	ptp.Param3 = 0xFFFFFFFFU;  /* 0xFFFFFFFFU should be "all properties" */
+	ptp.Param4 = 0x00000000U;
+	ptp.Param5 = 0x00000000U;  /* means - return single tree below the Param1 handle */
 	ptp.Nparam = 5;
 	ret = ptp_transaction(params, &ptp, PTP_DP_GETDATA, 0, &opldata, &oplsize);  
 	if (ret == PTP_RC_OK) *nrofprops = ptp_unpack_OPL(params, opldata, props, oplsize);
@@ -5361,6 +5432,10 @@ ptp_object_want (PTPParams *params, uint32_t handle, int want, PTPObject **retob
 	PTPObject	*ob;
 	/*Camera 		*camera = ((PTPData *)params->data)->camera;*/
 
+	/* If GetObjectInfo is broken, force GetPropList */
+	if (params->device_flags & DEVICE_FLAG_PROPLIST_OVERRIDES_OI)
+		want |= PTPOBJECT_MTPPROPLIST_LOADED;
+
 	*retob = NULL;
 	if (!handle) {
 		ptp_debug (params, "ptp_object_want: querying handle 0?\n");
@@ -5417,11 +5492,72 @@ ptp_object_want (PTPParams *params, uint32_t handle, int want, PTPObject **retob
 		}
 
 		ptp_debug (params, "ptp2/mtpfast: reading mtp proplist of %08x", handle);
-		ret = ptp_mtp_getobjectproplist (params, handle, &props, &nrofprops);
+		/* We just want this one object, not all at once. */
+		ret = ptp_mtp_getobjectproplist_single (params, handle, &props, &nrofprops);
 		if (ret != PTP_RC_OK)
 			goto fallback;
 		ob->mtpprops = props;
 		ob->nrofmtpprops = nrofprops;
+
+		/* Override the ObjectInfo data with data from properties */
+		if (params->device_flags & DEVICE_FLAG_PROPLIST_OVERRIDES_OI) {
+			int i;
+			MTPProperties *prop = ob->mtpprops;
+
+			for (i=0;i<ob->nrofmtpprops;i++,prop++) {
+				/* in case we got all subtree objects */
+				if (prop->ObjectHandle != handle) continue;
+
+				switch (prop->property) {
+				case PTP_OPC_StorageID:
+					ob->oi.StorageID = prop->propval.u32;
+					break;
+				case PTP_OPC_ObjectFormat:
+					ob->oi.ObjectFormat = prop->propval.u16;
+					break;
+				case PTP_OPC_ProtectionStatus:
+					ob->oi.ProtectionStatus = prop->propval.u16;
+					break;
+				case PTP_OPC_ObjectSize:
+					if (prop->datatype == PTP_DTC_UINT64) {
+						if (prop->propval.u64 > 0xFFFFFFFFU)
+							ob->oi.ObjectCompressedSize = 0xFFFFFFFFU;
+						else
+							ob->oi.ObjectCompressedSize = (uint32_t)prop->propval.u64;
+					} else if (prop->datatype == PTP_DTC_UINT32) {
+						ob->oi.ObjectCompressedSize = prop->propval.u32;
+					}
+					break;
+				case PTP_OPC_AssociationType:
+					ob->oi.AssociationType = prop->propval.u16;
+					break;
+				case PTP_OPC_AssociationDesc:
+					ob->oi.AssociationDesc = prop->propval.u32;
+					break;
+				case PTP_OPC_ObjectFileName:
+					if (prop->propval.str) {
+						free(ob->oi.Filename);
+						ob->oi.Filename = strdup(prop->propval.str);
+					}
+					break;
+				case PTP_OPC_DateCreated:
+					ob->oi.CaptureDate = ptp_unpack_PTPTIME(prop->propval.str);
+					break;
+				case PTP_OPC_DateModified:
+					ob->oi.ModificationDate = ptp_unpack_PTPTIME(prop->propval.str);
+					break;
+				case PTP_OPC_Keywords:
+					if (prop->propval.str) {
+						free(ob->oi.Keywords);
+						ob->oi.Keywords = strdup(prop->propval.str);
+					}
+					break;
+				case PTP_OPC_ParentObject:
+					ob->oi.ParentObject = prop->propval.u32;
+					break;
+				}
+			}
+		}
 
 #if 0
 		MTPProperties 	*xpl;
