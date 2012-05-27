@@ -2903,6 +2903,7 @@ ptp_mtp_setobjectproplist (PTPParams* params, MTPProperties *props, int nrofprop
 	return ret;
 }
 
+#ifdef USE_MTPZ
 uint16_t
 ptp_mtpz_sendwmdrmpdapprequest (PTPParams* params, unsigned char *appcertmsg, uint32_t size)
 {
@@ -2924,6 +2925,7 @@ ptp_mtpz_getwmdrmpdappresponse (PTPParams* params, unsigned char **response, uin
 	*response = NULL;
 	return ptp_transaction (params, &ptp, PTP_DP_GETDATA, 0, response, size);
 }
+#endif
 
 /****** CHDK interface ******/
 

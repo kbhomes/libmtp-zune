@@ -741,7 +741,7 @@ void LIBMTP_Set_Debug(int level)
  * Never re-initialize libmtp!
  *
  * The only thing this does at the moment is to initialise the
- * filetype mapping table.
+ * filetype mapping table, as well as load MTPZ data if necessary.
  */
 void LIBMTP_Init(void)
 {
