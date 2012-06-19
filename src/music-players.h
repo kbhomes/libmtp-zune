@@ -355,15 +355,31 @@
       "Galaxy Nexus/Galaxy S i9000/i9250, Android 4.0 updates", 0x685c,
       DEVICE_FLAGS_ANDROID_BUGS |
       DEVICE_FLAG_PLAYLIST_SPL_V2 },
-  // From: Ignacio Martínez <ignacio.martinezrivera@yahoo.es>
-  // It seems that some PTP commands are broken.
-  // Galaxy S2 has a connection timeout, the session must be
-  // open in about 3 seconds since the device is plugged in, after
-  // that time it will not respond.
-  // Seems also to be used with Galaxy Nexus debug mode and on
-  // US markets for some weird reason.
+  // Reported by David Goodenough <dfgdga@users.sourceforge.net>
+  // Guessing on flags.
+  { "Samsung", 0x04e8, "Galaxy Y", 0x685e,
+      DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST_ALL |
+      DEVICE_FLAG_UNLOAD_DRIVER |
+      DEVICE_FLAG_LONG_TIMEOUT |
+      DEVICE_FLAG_PROPLIST_OVERRIDES_OI	},
+  /*
+   * This entry (device 0x6860) seems to be used on a *lot* of Samsung
+   * Android (gingerbread, 2.3) phones. It is *not* the Android MTP stack
+   * but an internal Samsung stack.
+   *
+   * Popular devices: Galaxy S2 and S3.
+   *
+   * - It seems that some PTP commands are broken.
+   * - Devices seem to have a connection timeout, the session must be
+   *   open in about 3 seconds since the device is plugged in, after
+   *   that time it will not respond. Thus GUI programs work fine.
+   * - Seems also to be used with Galaxy Nexus debug mode and on
+   *   US markets for some weird reason.
+   *
+   * From: Ignacio Martínez <ignacio.martinezrivera@yahoo.es> and others
+   */
   { "Samsung", 0x04e8,
-      "GT-P7310/P7510/N7000/I9100/Galaxy Tab 7.7/10.1/S2/Nexus/Note/Y", 0x6860,
+      "GT P7310/P7510/N7000/I9070/I9100/I9300 Galaxy Tab 7.7/10.1/S2/S3/Nexus/Note/Y", 0x6860,
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST_ALL |
       DEVICE_FLAG_UNLOAD_DRIVER |
       DEVICE_FLAG_LONG_TIMEOUT |
@@ -840,6 +856,8 @@
       DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by anonymous sourceforge user
   { "Archos", 0x0e79, "101 G9 Turbo", 0x1539, DEVICE_FLAGS_ANDROID_BUGS },
+  // Reported by anonymous sourceforge user
+  { "Archos", 0x0e79, "70it2", 0x1568, DEVICE_FLAGS_ANDROID_BUGS },
 
   /*
    * Dunlop (OEM of EGOMAN ltd?) reported by Nanomad
@@ -1381,6 +1399,11 @@
       DEVICE_FLAG_IGNORE_HEADER_ERRORS |
       DEVICE_FLAG_BROKEN_SEND_OBJECT_PROPLIST |
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
+  // Reported by Alejandro DC <Alejandro_DC@users.sourceforge.ne>
+  { "SonyEricsson", 0x0fce, "Xperia MK16i", 0x015a,
+      DEVICE_FLAG_IGNORE_HEADER_ERRORS |
+      DEVICE_FLAG_BROKEN_SEND_OBJECT_PROPLIST |
+      DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
   // Reported by <wealas@users.sourceforge.net>
   // Android with homebrew MTP stack, possibly Aricent
   { "SonyEricsson", 0x0fce, "ST18a Xperia Ray", 0x0161,
@@ -1396,12 +1419,21 @@
   // Reported by Paul Taylor
   { "SONY", 0x0fce, "Xperia S", 0x0169,
       DEVICE_FLAG_NO_ZERO_READS | DEVICE_FLAGS_ANDROID_BUGS },
+  // Reported by Ondra Lengal (blindly copied from Xperia S)
+  { "SONY", 0x0fce, "Xperia P", 0x0172,
+      DEVICE_FLAG_NO_ZERO_READS | DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by Jonas Nyrén <spectralmks@users.sourceforge.net>
   { "SonyEricsson", 0x0fce, "W302", 0x10c8,
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
   // Reported by anonymous sourceforge user
   // Suspect Aricent stack, guessing on these bug flags
   { "SonyEricsson", 0x0fce, "Xperia Arc LT15i", 0x514f,
+      DEVICE_FLAG_IGNORE_HEADER_ERRORS |
+      DEVICE_FLAG_BROKEN_SEND_OBJECT_PROPLIST |
+      DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
+  // Reported by Eduard Bloch <blade@debian.org>
+  // Xperia Ray (2012), SE Android 2.3.4, flags from ST18a
+  { "SonyEricsson", 0x0fce, "ST18i Xperia Ray", 0x5161,
       DEVICE_FLAG_IGNORE_HEADER_ERRORS |
       DEVICE_FLAG_BROKEN_SEND_OBJECT_PROPLIST |
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
@@ -1598,6 +1630,9 @@
   /*
    * Asus
    */
+  // Reported by Glen Overby
+  { "Asus", 0x0b05, "TF300 Transformer", 0x4c80,
+      DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by anonymous Sourceforge user
   { "Asus", 0x0b05, "TF201 Transformer Prime (keyboard dock)", 0x4d00,
       DEVICE_FLAGS_ANDROID_BUGS },
