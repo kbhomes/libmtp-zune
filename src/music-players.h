@@ -792,6 +792,9 @@
   { "Toshiba", 0x0930, "Gigabeat MET401", 0x001d,
       DEVICE_FLAG_NO_RELEASE_INTERFACE |
       DEVICE_FLAG_BROKEN_SEND_OBJECT_PROPLIST },
+  // Reported by Andree Jacobson <nmcandree@users.sourceforge.net>
+  { "Toshiba", 0x0930, "Excite AT300", 0x0963,
+      DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by Nigel Cunningham <nigel@tuxonice.net>
   // Guessing on Android bugs
   { "Toshiba", 0x0930, "Thrive AT100/AT105", 0x7100,
@@ -1103,6 +1106,9 @@
   // Guessing on device flags
   { "Medion", 0x0408, "MD99000 (P9514)/Olivetti Olipad 110", 0xb009,
     DEVICE_FLAG_UNLOAD_DRIVER | DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
+  // Reported by Richard Eigenmann <richieigenmann@users.sourceforge.net>
+  { "Medion", 0x0408, "Lifetab P9514", 0xb00a,
+    DEVICE_FLAG_UNLOAD_DRIVER | DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by anonymous SourceForge user
   { "Maxfield", 0x066f, "G-Flash NG 1GB", 0x846c,
     DEVICE_FLAG_UNLOAD_DRIVER | DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
@@ -1388,6 +1394,16 @@
   // Reported by Serge Chirik <schirik@users.sourceforge.net>
   { "SonyEricsson", 0x0fce,  "j108i (Cedar)", 0x014e,
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
+  /*
+   * SonyEricsson/SONY Android devices usually have three personalities due to
+   * using composite descriptors and the fact that Windows cannot distinguish
+   * the device unless each composite descriptor is unique.
+   *
+   * 0x0nnn = MTP
+   * 0x4nnn = MTP + mass storage (for CD-ROM)
+   * 0x5nnn = MTP + ADB (Android debug bridge)
+   *
+   */
   // Reported by Jonas Salling <>
   // Erroneous MTP implementation seems to be from Aricent, returns
   // broken transaction ID.
@@ -1395,10 +1411,10 @@
       DEVICE_FLAGS_ARICENT_BUGS },
   // Reported by Eamonn Webster <eweb@users.sourceforge.net>
   // Guessing on the ignore errors flag
-  { "SonyEricsson", 0x0fce, "Xperia Neo", 0x0156,
+  { "SonyEricsson", 0x0fce, "MT11i Xperia Neo", 0x0156,
       DEVICE_FLAGS_ARICENT_BUGS },
   // Reported by Alejandro DC <Alejandro_DC@users.sourceforge.ne>
-  { "SonyEricsson", 0x0fce, "Xperia MK16i", 0x015a,
+  { "SonyEricsson", 0x0fce, "MK16i Xperia", 0x015a,
       DEVICE_FLAGS_ARICENT_BUGS },
   // Reported by <wealas@users.sourceforge.net>
   // Android with homebrew MTP stack, possibly Aricent
@@ -1415,32 +1431,52 @@
   // Reported by Paul Taylor
   { "SONY", 0x0fce, "Xperia S", 0x0169,
       DEVICE_FLAG_NO_ZERO_READS | DEVICE_FLAGS_ANDROID_BUGS },
-  // Reported by Ondra Lengal (blindly copied from Xperia S)
+  // Reported by equaeghe <equaeghe@users.sourceforge.net>
+  { "SONY", 0x0fce, "ST15i Xperia U", 0x0171,
+      DEVICE_FLAGS_ANDROID_BUGS },
+  // Reported by Ondra Lengal
   { "SONY", 0x0fce, "Xperia P", 0x0172,
       DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by Jonas Nyrén <spectralmks@users.sourceforge.net>
   { "SonyEricsson", 0x0fce, "W302", 0x10c8,
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
+  /*
+   * MTP+MSC personalities of MTP devices (see above)
+   */
   // Reported by equaeghe <equaeghe@users.sourceforge.net>
-  { "SONY", 0x0fce, "Xperia U", 0x4171,
+  { "SONY", 0x0fce, "ST25i Xperia U (MTP+MSC mode)", 0x4171,
       DEVICE_FLAGS_ANDROID_BUGS },
+  // Guessing on this one
+  { "SONY", 0x0fce, "Xperia P (MTP+MSC mode)", 0x4172,
+      DEVICE_FLAGS_ANDROID_BUGS },
+  /*
+   * MTP+ADB personalities of MTP devices (see above)
+   */
   // Reported by anonymous sourceforge user
   // Suspect Aricent stack, guessing on these bug flags
-  { "SonyEricsson", 0x0fce, "Xperia Arc LT15i (debug mode)", 0x514f,
+  { "SonyEricsson", 0x0fce, "LT15i Xperia Arc (MTP+ADB mode)", 0x514f,
       DEVICE_FLAGS_ARICENT_BUGS },
-  { "SonyEricsson", 0x0fce, "Xperia MK16i (debug mode)", 0x515a,
+  // Reported by Michael K. <kmike@users.sourceforge.net>
+  { "SonyEricsson", 0x0fce, "MT11i Xperia Neo (MTP+ADB mode)", 0x5156,
+      DEVICE_FLAGS_ARICENT_BUGS },
+  { "SonyEricsson", 0x0fce, "MK16i Xperia (MTP+ADB mode)", 0x515a,
       DEVICE_FLAGS_ARICENT_BUGS },
   // Reported by Eduard Bloch <blade@debian.org>
   // Xperia Ray (2012), SE Android 2.3.4, flags from ST18a
-  { "SonyEricsson", 0x0fce, "ST18i Xperia Ray (debug mode)", 0x5161,
+  { "SonyEricsson", 0x0fce, "ST18i Xperia Ray (MTP+ADB mode)", 0x5161,
       DEVICE_FLAGS_ARICENT_BUGS },
   // Reported by StehpanKa <stehp@users.sourceforge.net>
   // Android with homebrew MTP stack, possibly Aricent
-  { "SonyEricsson", 0x0fce, "SK17i Xperia mini pro (debug mode)", 0x5166,
+  { "SonyEricsson", 0x0fce, "SK17i Xperia mini pro (MTP+ADB mode)", 0x5166,
       DEVICE_FLAGS_ARICENT_BUGS },
   // Android with homebrew MTP stack, possibly Aricent
-  { "SonyEricsson", 0x0fce, "ST15i Xperia Mini (debug mode)", 0x5167,
+  { "SonyEricsson", 0x0fce, "ST15i Xperia Mini (MTP+ADB mode)", 0x5167,
       DEVICE_FLAGS_ARICENT_BUGS },
+  // Reported by equaeghe <equaeghe@users.sourceforge.net>
+  { "SONY", 0x0fce, "Xperia U ST25i (MTP+ADB mode)", 0x5171,
+      DEVICE_FLAGS_ANDROID_BUGS },
+  { "SONY", 0x0fce, "Xperia Sola MT27i (MTP+MSC+? mode)", 0xa173,
+      DEVICE_FLAGS_ANDROID_BUGS },
   // Reported by Anonymous Sourceforge user
   { "SonyEricsson", 0x0fce,  "j10i (Elm)", 0xd144,
       DEVICE_FLAG_BROKEN_MTPGETOBJPROPLIST },
@@ -1646,6 +1682,9 @@
       DEVICE_FLAGS_ANDROID_BUGS },
   { "Asus", 0x0b05, "TFXXX Transformer Prime (unknown version)", 0x4d04,
       DEVICE_FLAGS_ANDROID_BUGS },
+  // Reported by anonymous Sourceforge user
+  { "Asus", 0x0b05, "TF101 Eeepad Slider", 0x4e01,
+      DEVICE_FLAGS_ANDROID_BUGS },
   { "Asus", 0x0b05, "TF101 Eeepad Transformer", 0x4e0f,
       DEVICE_FLAGS_ANDROID_BUGS },
   { "Asus", 0x0b05, "TF101 Eeepad Transformer (debug mode)", 0x4e1f,
@@ -1683,6 +1722,12 @@
    */
   { "HTC", 0x0bb4, "Zopo ZP100", 0x0c02,
       DEVICE_FLAGS_ANDROID_BUGS },
+  // Reported by Steven Eastland <grassmonk@users.sourceforge.net>
+  { "HTC", 0x0bb4, "EVO 4G LTE", 0x0c93,
+      DEVICE_FLAGS_ANDROID_BUGS },
+  // Reported by Steven Eastland <grassmonk@users.sourceforge.net>
+  { "HTC", 0x0bb4, "EVO 4G LTE (second ID)", 0x0ca8,
+      DEVICE_FLAGS_ANDROID_BUGS },
   // These identify themselves as "cm_tenderloin", fun...
   // Done by HTC for HP I guess.
   { "Hewlett-Packard", 0x0bb4, "HP Touchpad", 0x685c,
@@ -1708,9 +1753,10 @@
   { "Vizio", 0x0489, "VTAB1008", 0xe040, DEVICE_FLAGS_ANDROID_BUGS },
 
   /*
-   * Viewpia
+   * Viewpia, bq...
+   * Seems like some multi-branded OEM product.
    */
-  { "Viewpia", 0x2207, "DR", 0x0001, DEVICE_FLAGS_ANDROID_BUGS },
+  { "Various", 0x2207, "Viewpia DR/bq Kepler", 0x0001, DEVICE_FLAGS_ANDROID_BUGS },
 
   /*
    * Other strange stuff.
