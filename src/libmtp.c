@@ -46,6 +46,7 @@
 #include "mtpz.h"
 
 #include <stdlib.h>
+#include <limits.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
@@ -62,8 +63,18 @@
 /**
  * Global debug level
  * We use a flag system to enable a part of logs.
- * To choose a particular flag, you have to use LIBMTP_DEBUG env variable.
- * Indeed, the option '-d' enables all logs.
+ *
+ * The LIBMTP_DEBUG environment variable sets the debug flags for any binary
+ * that uses libmtp and calls LIBMTP_Init. The value can be given in decimal
+ * (must not start with "0" or it will be interpreted in octal), or in
+ * hexadecimal (must start with "0x").
+ *
+ * The value "-1" enables all debug flags.
+ *
+ * Some of the utilities in examples/ also take a command-line flag "-d" that
+ * enables all debug flags, as if you had set LIBMTP_DEBUG=-1.
+ *
+ * Flags (combine by adding the hex values):
  *  0x00 [0000 0000] : no debug (default)
  *  0x01 [0000 0001] : PTP debug
  *  0x02 [0000 0010] : Playlist debug
@@ -728,8 +739,8 @@ static LIBMTP_property_t map_ptp_property_to_libmtp_property(uint16_t inproperty
 void LIBMTP_Set_Debug(int level)
 {
   if (LIBMTP_debug || level)
-    LIBMTP_ERROR("LIBMTP_Set_Debug: Setting debugging level to %d (%s)\n",
-    level, level ? "on" : "off");
+    LIBMTP_ERROR("LIBMTP_Set_Debug: Setting debugging level to %d (0x%02x) "
+                 "(%s)\n", level, level, level ? "on" : "off");
 
   LIBMTP_debug = level;
 }
@@ -745,8 +756,17 @@ void LIBMTP_Set_Debug(int level)
  */
 void LIBMTP_Init(void)
 {
-  if (getenv("LIBMTP_DEBUG"))
-    LIBMTP_Set_Debug(atoi(getenv("LIBMTP_DEBUG")));
+  const char *env_debug = getenv("LIBMTP_DEBUG");
+  if (env_debug) {
+    const long debug_flags = strtol(env_debug, NULL, 0);
+    if (debug_flags != LONG_MIN && debug_flags != LONG_MAX &&
+        INT_MIN <= debug_flags && debug_flags <= INT_MAX) {
+      LIBMTP_Set_Debug(debug_flags);
+    } else {
+      fprintf(stderr, "LIBMTP_Init: error setting debug flags from environment "
+                      "value \"%s\"\n", env_debug);
+    }
+  }
 
   init_filemap();
   init_propertymap();
@@ -1670,6 +1690,7 @@ LIBMTP_ptp_debug(void *data, const char *format, va_list args)
 {
   if ((LIBMTP_debug & LIBMTP_DEBUG_PTP) != 0) {
     vfprintf (stderr, format, args);
+    fprintf (stderr, "\n");
     fflush (stderr);
   }
 }
@@ -1895,22 +1916,43 @@ LIBMTP_mtpdevice_t *LIBMTP_Open_Raw_Device_Uncached(LIBMTP_raw_device_t *rawdevi
    */
   {
     LIBMTP_device_extension_t *tmpext = mtp_device->extensions;
+    int is_microsoft_com_wpdna = 0;
+    int is_android = 0;
+    int is_sony_net_wmfu = 0;
+    int is_sonyericsson_com_se = 0;
 
+    /* Loop over extensions and set flags */
     while (tmpext != NULL) {
-      /*
-       * If it is fixed in later versions, test on tmpext->major, tmpext->minor
-       */
-      if (!strcmp(tmpext->name, "android.com")) {
-	LIBMTP_INFO("Android device detected, assigning default bug flags\n");
-	ptp_usb->rawdevice.device_entry.device_flags |=
-	  DEVICE_FLAGS_ANDROID_BUGS;
-      }
-      if (!strcmp(tmpext->name, "sony.net/WMFU")) {
-	LIBMTP_INFO("SONY NWZ device detected, assigning default bug flags\n");
-	ptp_usb->rawdevice.device_entry.device_flags |=
-	  DEVICE_FLAGS_SONY_NWZ_BUGS;
-      }
+      if (!strcmp(tmpext->name, "microsoft.com/WPDNA"))
+	is_microsoft_com_wpdna = 1;
+      if (!strcmp(tmpext->name, "android.com"))
+	is_android = 1;
+      if (!strcmp(tmpext->name, "sony.net/WMFU"))
+	is_sony_net_wmfu = 1;
+      if (!strcmp(tmpext->name, "sonyericsson.com/SE"))
+	is_sonyericsson_com_se = 1;
       tmpext = tmpext->next;
+    }
+
+    /* Check for specific stacks */
+    if (is_microsoft_com_wpdna && is_sonyericsson_com_se && !is_android) {
+      /*
+       * The Aricent stack seems to be detected by providing WPDNA, the SonyEricsson
+       * extension and NO Android extension.
+       */
+      ptp_usb->rawdevice.device_entry.device_flags |= DEVICE_FLAGS_ARICENT_BUGS;
+      LIBMTP_INFO("Aricent MTP stack device detected, assigning default bug flags\n");
+    }
+    else if (is_android) {
+      /*
+       * If bugs are fixed in later versions, test on tmpext->major, tmpext->minor
+       */
+      ptp_usb->rawdevice.device_entry.device_flags |= DEVICE_FLAGS_ANDROID_BUGS;
+      LIBMTP_INFO("Android device detected, assigning default bug flags\n");
+    }
+    else if (is_sony_net_wmfu) {
+      ptp_usb->rawdevice.device_entry.device_flags |= DEVICE_FLAGS_SONY_NWZ_BUGS;
+      LIBMTP_INFO("SONY NWZ device detected, assigning default bug flags\n");
     }
   }
 
@@ -2371,7 +2413,10 @@ static void add_ptp_error_to_errorstack(LIBMTP_mtpdevice_t *device,
     snprintf(outstr, sizeof(outstr), "PTP Layer error %04x: %s", ptp_error, error_text);
     outstr[sizeof(outstr)-1] = '\0';
     add_error_to_errorstack(device, LIBMTP_ERROR_PTP_LAYER, outstr);
-    add_error_to_errorstack(device, LIBMTP_ERROR_PTP_LAYER, "(Look this up in ptp.h for an explanation.)");
+
+    snprintf(outstr, sizeof(outstr), "Error %04x: %s", ptp_error, ptp_strerror(ptp_error));
+    outstr[sizeof(outstr)-1] = '\0';
+    add_error_to_errorstack(device, LIBMTP_ERROR_PTP_LAYER, outstr);
   }
 }
 
@@ -2460,8 +2505,7 @@ void LIBMTP_Dump_Errorstack(LIBMTP_mtpdevice_t *device)
  * problems getting the metadata.
  * @return 0 if all was OK, -1 on failure.
  */
-static int get_all_metadata_fast(LIBMTP_mtpdevice_t *device,
-				 uint32_t storage)
+static int get_all_metadata_fast(LIBMTP_mtpdevice_t *device)
 {
   PTPParams      *params = (PTPParams *) device->params;
   int		 cnt = 0;
@@ -2673,7 +2717,7 @@ static void flush_handles(LIBMTP_mtpdevice_t *device)
       && !FLAG_BROKEN_MTPGETOBJPROPLIST(ptp_usb)
       && !FLAG_BROKEN_MTPGETOBJPROPLIST_ALL(ptp_usb)) {
     // Use the fast method. Ignore return value for now.
-    ret = get_all_metadata_fast(device, PTP_GOH_ALL_STORAGE);
+    ret = get_all_metadata_fast(device);
   }
 
   // If the previous failed or returned no objects, use classic
