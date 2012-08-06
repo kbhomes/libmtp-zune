@@ -22,12 +22,10 @@
 #ifndef MTPZ_H_INCLUSION_GUARD
 #define MTPZ_H_INCLUSION_GUARD
 
-#ifdef USE_MTPZ
 uint16_t ptp_mtpz_handshake (PTPParams* params);
 int mtpz_loaddata(void);
 
 int use_mtpz;
-#endif
 
 #endif /* LIBMTP_H_INCLUSION_GUARD */
 
