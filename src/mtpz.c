@@ -59,6 +59,7 @@
 
 int use_mtpz;
 
+static unsigned char *MTPZ_ENCRYPTION_KEY;
 static unsigned char *MTPZ_PUBLIC_EXPONENT;
 static unsigned char *MTPZ_MODULUS;
 static unsigned char *MTPZ_PRIVATE_KEY;
@@ -124,6 +125,19 @@ int mtpz_loaddata()
 	{
 		LIBMTP_INFO("Error: Unable to read MTPZ public exponent from ~/.mtpz-data\n");
 		return -1;
+	}
+
+	// Should only be 33 characters in length, but fgets will encounter a newline and stop.
+	char *hexenckey = (unsigned char *)fgets_strip((char *)malloc(35), 35, fdata);
+	if (!hexenckey)
+	{
+		LIBMTP_INFO("Error: Unable to read MTPZ encryption key from ~/.mtpz-data\n");
+		return -1;
+	}
+	MTPZ_ENCRYPTION_KEY = hex_to_bytes(hexenckey, strlen(hexenckey));
+	if (!MTPZ_ENCRYPTION_KEY) 
+	{
+		LIBMTP_INFO("Error: Unable to read MTPZ encryption key from ~/.mtpz-data\n");
 	}
 
 	// Should only be 256 characters in length, but fgets will encounter a newline and stop.
@@ -500,8 +514,7 @@ unsigned int mtpz_hash_rotate_left(unsigned int x, int n)
 /* MTPZ encryption implementation */
 
 void mtpz_encryption_cipher(unsigned char *data, unsigned int len, char encrypt)
-{
-	unsigned char key[] = { 0xB1, 0xCE, 0x71, 0x1C, 0x1E, 0x1B, 0x46, 0x87, 0x84, 0xA0, 0x84, 0x90, 0xD5, 0x96, 0x22, 0x16 };		
+{	
 	unsigned char *expanded = NULL;
 
 	int offset = 0, count = len;
@@ -509,7 +522,7 @@ void mtpz_encryption_cipher(unsigned char *data, unsigned int len, char encrypt)
 	if ((count & 0x0F) == 0)
 	{
 		int exp_len = 0;
-		expanded = mtpz_encryption_expand_key(key, 16, 10, &exp_len);
+		expanded = mtpz_encryption_expand_key((unsigned char *)MTPZ_ENCRYPTION_KEY, 16, 10, &exp_len);
 
 		if (count != 0)
 		{
