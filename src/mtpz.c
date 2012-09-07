@@ -19,6 +19,17 @@
  * Boston, MA 02111-1307, USA.
  *
  * This file provides mtp zune cryptographic setup interfaces.
+ *
+ * DISCLAIMER:
+ *
+ * The intention of this implementation is for users to be able
+ * to interoperate with their devices, i.e. copy music to them in
+ * operating systems other than Microsoft Windows, so it can be
+ * played back on the device. We do not provide encryption keys
+ * and constants in libmtp, we never will. You have to have these
+ * on file in your home directory in $HOME/.mtpz-data, and we suggest
+ * that you talk to Microsoft about providing the proper numbers if
+ * you want to use this facility.
  */
 #include "config.h"
 #include "libmtp.h"
@@ -30,9 +41,7 @@
 #include "util.h"
 #include "mtpz.h"
 
-#ifdef USE_MTPZ
 #include <gcrypt.h>
-#endif
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -45,9 +54,10 @@
 
 /* Microsoft MTPZ extensions */
 
-#ifdef USE_MTPZ
-/* The ~/.mtpz-data file contains all four necessary pieces of data:
+/*
+ * The ~/.mtpz-data file contains all four necessary pieces of data:
  *
+ *   encryption key
  *   public exponent
  *   modulus
  *   private key
@@ -55,9 +65,12 @@
  *
  * These four pieces of data are each stored in hex representation,
  * separated by newline characters.
-*/
-
-int use_mtpz;
+ *
+ * If you know of a published, public reference for one of these
+ * arrays of data, please inform us, so we can include it here and
+ * drop it from the external file. Even better is if you convince
+ * Microsoft to officially provide keys to this project.
+ */
 
 static unsigned char *MTPZ_ENCRYPTION_KEY;
 static unsigned char *MTPZ_PUBLIC_EXPONENT;
@@ -74,7 +87,7 @@ static char *fgets_strip(char * str, int num, FILE * stream)
 	{
 		size_t newlen = strlen(result);
 
-		if (result[newlen - 1] == '\n') 
+		if (result[newlen - 1] == '\n')
 			result[newlen - 1] = '\0';
 	}
 
@@ -100,12 +113,12 @@ static char *hex_to_bytes(char *hex, size_t len)
 }
 
 int mtpz_loaddata()
-{	
+{
 	char *home = getenv("HOME");
 	if (!home)
 	{
 		LIBMTP_INFO("Error: Unable to determine user's home directory.\n");
-		return -1;	
+		return -1;
 	}
 
 	int plen = strlen(home) + strlen("/.mtpz-data") + 1;
@@ -135,7 +148,7 @@ int mtpz_loaddata()
 		return -1;
 	}
 	MTPZ_ENCRYPTION_KEY = hex_to_bytes(hexenckey, strlen(hexenckey));
-	if (!MTPZ_ENCRYPTION_KEY) 
+	if (!MTPZ_ENCRYPTION_KEY)
 	{
 		LIBMTP_INFO("Error: Unable to read MTPZ encryption key from ~/.mtpz-data\n");
 	}
@@ -311,10 +324,10 @@ int mtpz_rsa_sign(int flen, unsigned char *from, int tlen, unsigned char *to, mt
 static char *mtpz_hash_init_state()
 {
 	char *s = (char *)malloc(92);
-	
+
 	if (s != NULL)
 		memset(s, 0, 92);
-	
+
 	return s;
 }
 
@@ -322,6 +335,11 @@ void mtpz_hash_reset_state(char *state)
 {
 	int *state_box = (int *)(state + 64);
 
+	/*
+	 * Constants from
+	 * http://csrc.nist.gov/publications/fips/fips180-2/fips180-2withchangenotice.pdf
+	 * Page 13, section 5.3.1
+	 */
 	state_box[0] = 0x67452301;
 	state_box[1] = 0xefcdab89;
 	state_box[2] = 0x98badcfe;
@@ -360,7 +378,7 @@ void mtpz_hash_transform_hash(char *state, char *msg, int len)
 
 			mtpz_hash_compute_hash(state, state, 64);
 		}
-	}	
+	}
 
 	while (i > 63)
 	{
@@ -514,7 +532,7 @@ unsigned int mtpz_hash_rotate_left(unsigned int x, int n)
 /* MTPZ encryption implementation */
 
 void mtpz_encryption_cipher(unsigned char *data, unsigned int len, char encrypt)
-{	
+{
 	unsigned char *expanded = NULL;
 
 	int offset = 0, count = len;
@@ -640,7 +658,7 @@ unsigned char *mtpz_encryption_expand_key(unsigned char *constant, int key_len, 
 		seek = 0xF4;
 		break;
 	}
-	
+
 	mtpz_encryption_inv_mix_columns(back, seek, count);
 
 	return back;
@@ -652,7 +670,7 @@ void mtpz_encryption_expand_key_inner(unsigned char *constant, int key_len, unsi
 	int rcon_i = 0;
 	int i = 0, j = 0;
 
-	switch (key_len) 
+	switch (key_len)
 	{
 		case 16:
 			ks = 16 * (10 + 1);
@@ -676,14 +694,14 @@ void mtpz_encryption_expand_key_inner(unsigned char *constant, int key_len, unsi
 	memcpy(key, constant, key_len);
 	unsigned char t0, t1, t2, t3;
 
-	for (i = key_len; i < ks; i += 4) 
+	for (i = key_len; i < ks; i += 4)
 	{
 		temp[0] = t0 = key[i - 4];
 		temp[1] = t1 = key[i - 3];
 		temp[2] = t2 = key[i - 2];
 		temp[3] = t3 = key[i - 1];
 
-		if (i % key_len == 0) 
+		if (i % key_len == 0)
 		{
 			temp[0] = (mtpz_aes_sbox[t1] ^ mtpz_aes_rcon[rcon_i]) & 0xFF;
 			temp[1] = mtpz_aes_sbox[t2];
@@ -724,7 +742,6 @@ void mtpz_encryption_inv_mix_columns(unsigned char *expanded, int offset, int ro
 		exp_int[1] = MTPZ_SWAP(mtpz_aes_gb9[expanded[o + 23]] ^ mtpz_aes_gb13[expanded[o + 22]] ^ mtpz_aes_gb11[expanded[o + 21]] ^ mtpz_aes_gb14[expanded[o + 20]]);
 		exp_int[2] = MTPZ_SWAP(mtpz_aes_gb9[expanded[o + 27]] ^ mtpz_aes_gb13[expanded[o + 26]] ^ mtpz_aes_gb11[expanded[o + 25]] ^ mtpz_aes_gb14[expanded[o + 24]]);
 		exp_int[3] = MTPZ_SWAP(mtpz_aes_gb9[expanded[o + 31]] ^ mtpz_aes_gb13[expanded[o + 30]] ^ mtpz_aes_gb11[expanded[o + 29]] ^ mtpz_aes_gb14[expanded[o + 28]]);
-		
 		o += 16;
 	}
 }
@@ -741,63 +758,63 @@ void mtpz_encryption_decrypt_custom(unsigned char *data, unsigned char *seed, un
 		u_seed = u_data;
 	else
 		u_seed = (unsigned int *)seed;
-	
+
 	unsigned int v14 = MTPZ_SWAP(u_seed[0]) ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]);
 	unsigned int v15 = MTPZ_SWAP(u_seed[1]) ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]);
 	unsigned int v16 = MTPZ_SWAP(u_seed[2]) ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]);
 	unsigned int v17 = MTPZ_SWAP(u_seed[3]) ^ MTPZ_SWAP(u_expanded[(keyOffset + 12) / 4]);
-	
+
 	unsigned int v18 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v15)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v16)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v14)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v17)];
 	unsigned int v19 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v16)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v17)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v15)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v14)];
 	unsigned int v20 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v17)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v14)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v16)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v15)];
 	unsigned int v21 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v14)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v15)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v17)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v16)];
-	
-	keyOffset -= 16;			
+
+	keyOffset -= 16;
 	int rounds = 9;
-	
+
 	do
 	{
 		v14 = v18 ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]);
 		v15 = v19 ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]);
 		v16 = v20 ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]);
 		v17 = v21 ^ MTPZ_SWAP(u_expanded[(keyOffset + 12) / 4]);
-		
+
 		v18 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v15)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v16)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v14)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v17)];
 		v19 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v16)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v17)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v15)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v14)];
 		v20 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v17)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v14)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v16)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v15)];
 		v21 = mtpz_aes_rt1[MTPZ_ENCRYPTIONBYTE3(v14)] ^ mtpz_aes_rt2[MTPZ_ENCRYPTIONBYTE2(v15)] ^ mtpz_aes_rt3[MTPZ_ENCRYPTIONLOBYTE(v17)] ^ mtpz_aes_rt4[MTPZ_ENCRYPTIONBYTE1(v16)];
-		
+
 		rounds--;
 		keyOffset -= 16;
 	}
 	while (rounds != 1);
-	
+
 	v14 = v18 ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]);
 	v15 = v19 ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]);
 	v16 = v20 ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]);
 	v17 = v21 ^ MTPZ_SWAP(u_expanded[(keyOffset + 12) / 4]);
 	keyOffset -= 16;
-	
+
 	v18 = ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONLOBYTE(v14)]) << 24) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE1 (v17)]) << 16) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE2 (v16)]) <<  8) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE3 (v15)]) <<  0);
-				
+
 	v19 = ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONLOBYTE(v15)]) << 24) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE1 (v14)]) << 16) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE2 (v17)]) <<  8) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE3 (v16)]) <<  0);
-	
+
 	v20 = ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONLOBYTE(v16)]) << 24) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE1 (v15)]) << 16) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE2 (v14)]) <<  8) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE3 (v17)]) <<  0);
-	
+
 	v21 = ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONLOBYTE(v17)]) << 24) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE1 (v16)]) << 16) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE2 (v15)]) <<  8) |
 		  ((mtpz_aes_invsbox[MTPZ_ENCRYPTIONBYTE3 (v14)]) <<  0);
-	
+
 	u_data[0] = MTPZ_SWAP(v18 ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]));
 	u_data[1] = MTPZ_SWAP(v19 ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]));
 	u_data[2] = MTPZ_SWAP(v20 ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]));
@@ -816,7 +833,7 @@ void mtpz_encryption_encrypt_custom(unsigned char *data, unsigned char *seed, un
 		u_seed = u_data;
 	else
 		u_seed = (unsigned int *)seed;
-	
+
 	unsigned int v14 = MTPZ_SWAP(u_seed[0]) ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]);
 	unsigned int v15 = MTPZ_SWAP(u_seed[1]) ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]);
 	unsigned int v16 = MTPZ_SWAP(u_seed[2]) ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]);
@@ -826,56 +843,56 @@ void mtpz_encryption_encrypt_custom(unsigned char *data, unsigned char *seed, un
 	unsigned int v19 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v14)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v17)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v15)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v16)];
 	unsigned int v20 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v15)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v14)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v16)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v17)];
 	unsigned int v21 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v16)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v15)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v17)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v14)];
-	
-	keyOffset += 16;			
+
+	keyOffset += 16;
 	int rounds = 1;
-	
+
 	do
 	{
-		
+
 		v14 = v18 ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]);
 		v15 = v19 ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]);
 		v16 = v20 ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]);
 		v17 = v21 ^ MTPZ_SWAP(u_expanded[(keyOffset + 12) / 4]);
-		
+
 		v18 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v17)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v16)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v14)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v15)];
 		v19 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v14)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v17)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v15)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v16)];
 		v20 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v15)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v14)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v16)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v17)];
 		v21 = mtpz_aes_ft1[MTPZ_ENCRYPTIONBYTE3(v16)] ^ mtpz_aes_ft2[MTPZ_ENCRYPTIONBYTE2(v15)] ^ mtpz_aes_ft3[MTPZ_ENCRYPTIONLOBYTE(v17)] ^ mtpz_aes_ft4[MTPZ_ENCRYPTIONBYTE1(v14)];
-		
+
 		rounds++;
 		keyOffset += 16;
 	}
 	while (rounds != 9);
-	
+
 	v14 = v18 ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]);
 	v15 = v19 ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]);
 	v16 = v20 ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]);
 	v17 = v21 ^ MTPZ_SWAP(u_expanded[(keyOffset + 12) / 4]);
 	keyOffset += 16;
-	
+
 	unsigned char *FT3_Bytes = (unsigned char *)mtpz_aes_ft3;
-	
+
 	v18 = ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONLOBYTE(v14)]) << 24) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE1 (v15)]) << 16) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE2 (v16)]) <<  8) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE3 (v17)]) <<  0);
-				
+
 	v19 = ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONLOBYTE(v15)]) << 24) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE1 (v16)]) << 16) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE2 (v17)]) <<  8) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE3 (v14)]) <<  0);
-	
+
 	v20 = ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONLOBYTE(v16)]) << 24) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE1 (v17)]) << 16) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE2 (v14)]) <<  8) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE3 (v15)]) <<  0);
-	
+
 	v21 = ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONLOBYTE(v17)]) << 24) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE1 (v14)]) << 16) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE2 (v15)]) <<  8) |
 		  ((FT3_Bytes[1 + 4 * MTPZ_ENCRYPTIONBYTE3 (v16)]) <<  0);
-	
+
 	u_data[0] = MTPZ_SWAP(v18 ^ MTPZ_SWAP(u_expanded[(keyOffset     ) / 4]));
 	u_data[1] = MTPZ_SWAP(v19 ^ MTPZ_SWAP(u_expanded[(keyOffset +  4) / 4]));
 	u_data[2] = MTPZ_SWAP(v20 ^ MTPZ_SWAP(u_expanded[(keyOffset +  8) / 4]));
@@ -914,11 +931,11 @@ void mtpz_encryption_encrypt_mac(unsigned char *hash, unsigned int hash_length, 
 	}
 
 	{
-		int len = 	(hash_length == 16) ? 10 : 
+		int len = 	(hash_length == 16) ? 10 :
 					(hash_length == 24) ? 12 : 32;
 		int exp_len;
 		unsigned char *expanded = mtpz_encryption_expand_key(hash, hash_length, len, &exp_len);
-		
+
 		unsigned char *actual_seed = (unsigned char *)malloc(16);
 		memset(actual_seed, 0, 16);
 
@@ -955,25 +972,25 @@ void mtpz_encryption_encrypt_mac(unsigned char *hash, unsigned int hash_length, 
 
 
 /* ENCRYPTION CONSTANTS */
-/* 
+/*
  * These tables can also be found in Mozilla's Network Security Services:
  *     http://www.mozilla.org/projects/security/pki/nss/
  *
  * <rijndael32.tab>:
- *     https://hg.mozilla.org/mozilla-central/raw-file/90828ac18dcf/security/nss/lib/freebl/rijndael32.tab 
- * 
- * Each of the following constant tables will also identify the corresponding 
+ *     https://hg.mozilla.org/mozilla-central/raw-file/90828ac18dcf/security/nss/lib/freebl/rijndael32.tab
+ *
+ * Each of the following constant tables will also identify the corresponding
  * table in the <rijndael32.tab> link.
  */
 
 /* Corresponds to Rcon[30] (seems to be truncated to include only the used constants) */
-unsigned char mtpz_aes_rcon[] =   
-{ 
-	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a 
+unsigned char mtpz_aes_rcon[] =
+{
+	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a
 };
 
 /* Corresponds to _S[256] (in hex) */
-unsigned char mtpz_aes_sbox[] =   
+unsigned char mtpz_aes_sbox[] =
 {
 	0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01,
 	0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, 0xca, 0x82, 0xc9, 0x7d,
@@ -1000,11 +1017,11 @@ unsigned char mtpz_aes_sbox[] =
 	0x86, 0xc1, 0x1d, 0x9e, 0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9,
 	0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
 	0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99,
-	0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 
+	0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 };
 
 /* Corresponds to _SInv[256] (in hex) */
-unsigned char mtpz_aes_invsbox[] =  
+unsigned char mtpz_aes_invsbox[] =
 {
 	0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38,  0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
 	0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87,  0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB,
@@ -1025,7 +1042,7 @@ unsigned char mtpz_aes_invsbox[] =
 };
 
 /* Corresponds to _T3[256] */
-unsigned int mtpz_aes_ft1[] =  
+unsigned int mtpz_aes_ft1[] =
 {
 	0x6363A5C6, 0x7C7C84F8,  0x777799EE, 0x7B7B8DF6, 0xF2F20DFF, 0x6B6BBDD6,  0x6F6FB1DE, 0xC5C55491,
 	0x30305060, 0x01010302,  0x6767A9CE, 0x2B2B7D56, 0xFEFE19E7, 0xD7D762B5,  0xABABE64D, 0x76769AEC,
@@ -1062,7 +1079,7 @@ unsigned int mtpz_aes_ft1[] =
 };
 
 /* Corresponds to _T2[256] */
-unsigned int mtpz_aes_ft2[] =  
+unsigned int mtpz_aes_ft2[] =
 {
 	0x63A5C663, 0x7C84F87C,  0x7799EE77, 0x7B8DF67B, 0xF20DFFF2, 0x6BBDD66B,  0x6FB1DE6F, 0xC55491C5,
 	0x30506030, 0x01030201,  0x67A9CE67, 0x2B7D562B, 0xFE19E7FE, 0xD762B5D7,  0xABE64DAB, 0x769AEC76,
@@ -1095,11 +1112,11 @@ unsigned int mtpz_aes_ft2[] =
 	0xE138D9E1, 0xF813EBF8,  0x98B32B98, 0x11332211, 0x69BBD269, 0xD970A9D9,  0x8E89078E, 0x94A73394,
 	0x9BB62D9B, 0x1E223C1E,  0x87921587, 0xE920C9E9, 0xCE4987CE, 0x55FFAA55,  0x28785028, 0xDF7AA5DF,
 	0x8C8F038C, 0xA1F859A1,  0x89800989, 0x0D171A0D, 0xBFDA65BF, 0xE631D7E6,  0x42C68442, 0x68B8D068,
-	0x41C38241, 0x99B02999,  0x2D775A2D, 0x0F111E0F, 0xB0CB7BB0, 0x54FCA854,  0xBBD66DBB, 0x163A2C16,	
+	0x41C38241, 0x99B02999,  0x2D775A2D, 0x0F111E0F, 0xB0CB7BB0, 0x54FCA854,  0xBBD66DBB, 0x163A2C16,
 };
 
 /* Corresponds to _T0[256] */
-unsigned int mtpz_aes_ft3[] =  
+unsigned int mtpz_aes_ft3[] =
 {
 	0xC66363A5, 0xF87C7C84,  0xEE777799, 0xF67B7B8D, 0xFFF2F20D, 0xD66B6BBD,  0xDE6F6FB1, 0x91C5C554,
 	0x60303050, 0x02010103,  0xCE6767A9, 0x562B2B7D, 0xE7FEFE19, 0xB5D7D762,  0x4DABABE6, 0xEC76769A,
@@ -1132,11 +1149,11 @@ unsigned int mtpz_aes_ft3[] =
 	0xD9E1E138, 0xEBF8F813,  0x2B9898B3, 0x22111133, 0xD26969BB, 0xA9D9D970,  0x078E8E89, 0x339494A7,
 	0x2D9B9BB6, 0x3C1E1E22,  0x15878792, 0xC9E9E920, 0x87CECE49, 0xAA5555FF,  0x50282878, 0xA5DFDF7A,
 	0x038C8C8F, 0x59A1A1F8,  0x09898980, 0x1A0D0D17, 0x65BFBFDA, 0xD7E6E631,  0x844242C6, 0xD06868B8,
-	0x824141C3, 0x299999B0,  0x5A2D2D77, 0x1E0F0F11, 0x7BB0B0CB, 0xA85454FC,  0x6DBBBBD6, 0x2C16163A,	
+	0x824141C3, 0x299999B0,  0x5A2D2D77, 0x1E0F0F11, 0x7BB0B0CB, 0xA85454FC,  0x6DBBBBD6, 0x2C16163A,
 };
 
 /* Corresponds to _T1[256] */
-unsigned int mtpz_aes_ft4[] =  
+unsigned int mtpz_aes_ft4[] =
 {
 	0xA5C66363, 0x84F87C7C,  0x99EE7777, 0x8DF67B7B, 0x0DFFF2F2, 0xBDD66B6B,  0xB1DE6F6F, 0x5491C5C5,
 	0x50603030, 0x03020101,  0xA9CE6767, 0x7D562B2B, 0x19E7FEFE, 0x62B5D7D7,  0xE64DABAB, 0x9AEC7676,
@@ -1173,7 +1190,7 @@ unsigned int mtpz_aes_ft4[] =
 };
 
 /* Corresponds to _TInv3[256] */
-unsigned int mtpz_aes_rt1[] =  
+unsigned int mtpz_aes_rt1[] =
 {
 	0xF4A75051, 0x4165537E,  0x17A4C31A, 0x275E963A, 0xAB6BCB3B, 0x9D45F11F,  0xFA58ABAC, 0xE303934B,
 	0x30FA5520, 0x766DF6AD,  0xCC769188, 0x024C25F5, 0xE5D7FC4F, 0x2ACBD7C5,  0x35448026, 0x62A38FB5,
@@ -1210,7 +1227,7 @@ unsigned int mtpz_aes_rt1[] =
 };
 
 /* Corresponds to _TInv2[256] */
-unsigned int mtpz_aes_rt2[] =  
+unsigned int mtpz_aes_rt2[] =
 {
 	0xA75051F4, 0x65537E41,  0xA4C31A17, 0x5E963A27, 0x6BCB3BAB, 0x45F11F9D,  0x58ABACFA, 0x03934BE3,
 	0xFA552030, 0x6DF6AD76,  0x769188CC, 0x4C25F502, 0xD7FC4FE5, 0xCBD7C52A,  0x44802635, 0xA38FB562,
@@ -1247,7 +1264,7 @@ unsigned int mtpz_aes_rt2[] =
 };
 
 /* Corresponds to _TInv0[256] */
-unsigned int mtpz_aes_rt3[] =  
+unsigned int mtpz_aes_rt3[] =
 {
 	0x51F4A750, 0x7E416553,  0x1A17A4C3, 0x3A275E96, 0x3BAB6BCB, 0x1F9D45F1,  0xACFA58AB, 0x4BE30393,
 	0x2030FA55, 0xAD766DF6,  0x88CC7691, 0xF5024C25, 0x4FE5D7FC, 0xC52ACBD7,  0x26354480, 0xB562A38F,
@@ -1284,7 +1301,7 @@ unsigned int mtpz_aes_rt3[] =
 };
 
 /* Corresponds to _TInv1[256] */
-unsigned int mtpz_aes_rt4[] =  
+unsigned int mtpz_aes_rt4[] =
 {
 	0x5051F4A7, 0x537E4165,  0xC31A17A4, 0x963A275E, 0xCB3BAB6B, 0xF11F9D45,  0xABACFA58, 0x934BE303,
 	0x552030FA, 0xF6AD766D,  0x9188CC76, 0x25F5024C, 0xFC4FE5D7, 0xD7C52ACB,  0x80263544, 0x8FB562A3,
@@ -1321,7 +1338,7 @@ unsigned int mtpz_aes_rt4[] =
 };
 
 /* Corresponds to _IMXC1[256] */
-unsigned int mtpz_aes_gb11[] =  
+unsigned int mtpz_aes_gb11[] =
 {
 	0x00000000, 0x0B0E090D,  0x161C121A, 0x1D121B17, 0x2C382434, 0x27362D39,  0x3A24362E, 0x312A3F23,
 	0x58704868, 0x537E4165,  0x4E6C5A72, 0x4562537F, 0x74486C5C, 0x7F466551,  0x62547E46, 0x695A774B,
@@ -1358,114 +1375,114 @@ unsigned int mtpz_aes_gb11[] =
 };
 
 /* Corresponds to _IMXC0[256] */
-unsigned int mtpz_aes_gb14[] =  
+unsigned int mtpz_aes_gb14[] =
 {
-	0x00000000,  0x0E090D0B,   0x1C121A16,  0x121B171D,  0x3824342C,  0x362D3927,   0x24362E3A,  0x2A3F2331, 
-	0x70486858,  0x7E416553,   0x6C5A724E,  0x62537F45,  0x486C5C74,  0x4665517F,   0x547E4662,  0x5A774B69, 
-	0xE090D0B0,  0xEE99DDBB,   0xFC82CAA6,  0xF28BC7AD,  0xD8B4E49C,  0xD6BDE997,   0xC4A6FE8A,  0xCAAFF381, 
-	0x90D8B8E8,  0x9ED1B5E3,   0x8CCAA2FE,  0x82C3AFF5,  0xA8FC8CC4,  0xA6F581CF,   0xB4EE96D2,  0xBAE79BD9, 
-	0xDB3BBB7B,  0xD532B670,   0xC729A16D,  0xC920AC66,  0xE31F8F57,  0xED16825C,   0xFF0D9541,  0xF104984A, 
-	0xAB73D323,  0xA57ADE28,   0xB761C935,  0xB968C43E,  0x9357E70F,  0x9D5EEA04,   0x8F45FD19,  0x814CF012, 
-	0x3BAB6BCB,  0x35A266C0,   0x27B971DD,  0x29B07CD6,  0x038F5FE7,  0x0D8652EC,   0x1F9D45F1,  0x119448FA, 
-	0x4BE30393,  0x45EA0E98,   0x57F11985,  0x59F8148E,  0x73C737BF,  0x7DCE3AB4,   0x6FD52DA9,  0x61DC20A2, 
-	0xAD766DF6,  0xA37F60FD,   0xB16477E0,  0xBF6D7AEB,  0x955259DA,  0x9B5B54D1,   0x894043CC,  0x87494EC7, 
-	0xDD3E05AE,  0xD33708A5,   0xC12C1FB8,  0xCF2512B3,  0xE51A3182,  0xEB133C89,   0xF9082B94,  0xF701269F, 
-	0x4DE6BD46,  0x43EFB04D,   0x51F4A750,  0x5FFDAA5B,  0x75C2896A,  0x7BCB8461,   0x69D0937C,  0x67D99E77, 
-	0x3DAED51E,  0x33A7D815,   0x21BCCF08,  0x2FB5C203,  0x058AE132,  0x0B83EC39,   0x1998FB24,  0x1791F62F, 
-	0x764DD68D,  0x7844DB86,   0x6A5FCC9B,  0x6456C190,  0x4E69E2A1,  0x4060EFAA,   0x527BF8B7,  0x5C72F5BC, 
-	0x0605BED5,  0x080CB3DE,   0x1A17A4C3,  0x141EA9C8,  0x3E218AF9,  0x302887F2,   0x223390EF,  0x2C3A9DE4, 
-	0x96DD063D,  0x98D40B36,   0x8ACF1C2B,  0x84C61120,  0xAEF93211,  0xA0F03F1A,   0xB2EB2807,  0xBCE2250C, 
-	0xE6956E65,  0xE89C636E,   0xFA877473,  0xF48E7978,  0xDEB15A49,  0xD0B85742,   0xC2A3405F,  0xCCAA4D54, 
-	0x41ECDAF7,  0x4FE5D7FC,   0x5DFEC0E1,  0x53F7CDEA,  0x79C8EEDB,  0x77C1E3D0,   0x65DAF4CD,  0x6BD3F9C6, 
-	0x31A4B2AF,  0x3FADBFA4,   0x2DB6A8B9,  0x23BFA5B2,  0x09808683,  0x07898B88,   0x15929C95,  0x1B9B919E, 
-	0xA17C0A47,  0xAF75074C,   0xBD6E1051,  0xB3671D5A,  0x99583E6B,  0x97513360,   0x854A247D,  0x8B432976, 
-	0xD134621F,  0xDF3D6F14,   0xCD267809,  0xC32F7502,  0xE9105633,  0xE7195B38,   0xF5024C25,  0xFB0B412E, 
-	0x9AD7618C,  0x94DE6C87,   0x86C57B9A,  0x88CC7691,  0xA2F355A0,  0xACFA58AB,   0xBEE14FB6,  0xB0E842BD, 
-	0xEA9F09D4,  0xE49604DF,   0xF68D13C2,  0xF8841EC9,  0xD2BB3DF8,  0xDCB230F3,   0xCEA927EE,  0xC0A02AE5, 
-	0x7A47B13C,  0x744EBC37,   0x6655AB2A,  0x685CA621,  0x42638510,  0x4C6A881B,   0x5E719F06,  0x5078920D, 
-	0x0A0FD964,  0x0406D46F,   0x161DC372,  0x1814CE79,  0x322BED48,  0x3C22E043,   0x2E39F75E,  0x2030FA55, 
-	0xEC9AB701,  0xE293BA0A,   0xF088AD17,  0xFE81A01C,  0xD4BE832D,  0xDAB78E26,   0xC8AC993B,  0xC6A59430, 
-	0x9CD2DF59,  0x92DBD252,   0x80C0C54F,  0x8EC9C844,  0xA4F6EB75,  0xAAFFE67E,   0xB8E4F163,  0xB6EDFC68, 
-	0x0C0A67B1,  0x02036ABA,   0x10187DA7,  0x1E1170AC,  0x342E539D,  0x3A275E96,   0x283C498B,  0x26354480, 
-	0x7C420FE9,  0x724B02E2,   0x605015FF,  0x6E5918F4,  0x44663BC5,  0x4A6F36CE,   0x587421D3,  0x567D2CD8, 
-	0x37A10C7A,  0x39A80171,   0x2BB3166C,  0x25BA1B67,  0x0F853856,  0x018C355D,   0x13972240,  0x1D9E2F4B, 
-	0x47E96422,  0x49E06929,   0x5BFB7E34,  0x55F2733F,  0x7FCD500E,  0x71C45D05,   0x63DF4A18,  0x6DD64713, 
-	0xD731DCCA,  0xD938D1C1,   0xCB23C6DC,  0xC52ACBD7,  0xEF15E8E6,  0xE11CE5ED,   0xF307F2F0,  0xFD0EFFFB, 
-	0xA779B492,  0xA970B999,   0xBB6BAE84,  0xB562A38F,  0x9F5D80BE,  0x91548DB5,   0x834F9AA8,  0x8D4697A3, 
+	0x00000000,  0x0E090D0B,   0x1C121A16,  0x121B171D,  0x3824342C,  0x362D3927,   0x24362E3A,  0x2A3F2331,
+	0x70486858,  0x7E416553,   0x6C5A724E,  0x62537F45,  0x486C5C74,  0x4665517F,   0x547E4662,  0x5A774B69,
+	0xE090D0B0,  0xEE99DDBB,   0xFC82CAA6,  0xF28BC7AD,  0xD8B4E49C,  0xD6BDE997,   0xC4A6FE8A,  0xCAAFF381,
+	0x90D8B8E8,  0x9ED1B5E3,   0x8CCAA2FE,  0x82C3AFF5,  0xA8FC8CC4,  0xA6F581CF,   0xB4EE96D2,  0xBAE79BD9,
+	0xDB3BBB7B,  0xD532B670,   0xC729A16D,  0xC920AC66,  0xE31F8F57,  0xED16825C,   0xFF0D9541,  0xF104984A,
+	0xAB73D323,  0xA57ADE28,   0xB761C935,  0xB968C43E,  0x9357E70F,  0x9D5EEA04,   0x8F45FD19,  0x814CF012,
+	0x3BAB6BCB,  0x35A266C0,   0x27B971DD,  0x29B07CD6,  0x038F5FE7,  0x0D8652EC,   0x1F9D45F1,  0x119448FA,
+	0x4BE30393,  0x45EA0E98,   0x57F11985,  0x59F8148E,  0x73C737BF,  0x7DCE3AB4,   0x6FD52DA9,  0x61DC20A2,
+	0xAD766DF6,  0xA37F60FD,   0xB16477E0,  0xBF6D7AEB,  0x955259DA,  0x9B5B54D1,   0x894043CC,  0x87494EC7,
+	0xDD3E05AE,  0xD33708A5,   0xC12C1FB8,  0xCF2512B3,  0xE51A3182,  0xEB133C89,   0xF9082B94,  0xF701269F,
+	0x4DE6BD46,  0x43EFB04D,   0x51F4A750,  0x5FFDAA5B,  0x75C2896A,  0x7BCB8461,   0x69D0937C,  0x67D99E77,
+	0x3DAED51E,  0x33A7D815,   0x21BCCF08,  0x2FB5C203,  0x058AE132,  0x0B83EC39,   0x1998FB24,  0x1791F62F,
+	0x764DD68D,  0x7844DB86,   0x6A5FCC9B,  0x6456C190,  0x4E69E2A1,  0x4060EFAA,   0x527BF8B7,  0x5C72F5BC,
+	0x0605BED5,  0x080CB3DE,   0x1A17A4C3,  0x141EA9C8,  0x3E218AF9,  0x302887F2,   0x223390EF,  0x2C3A9DE4,
+	0x96DD063D,  0x98D40B36,   0x8ACF1C2B,  0x84C61120,  0xAEF93211,  0xA0F03F1A,   0xB2EB2807,  0xBCE2250C,
+	0xE6956E65,  0xE89C636E,   0xFA877473,  0xF48E7978,  0xDEB15A49,  0xD0B85742,   0xC2A3405F,  0xCCAA4D54,
+	0x41ECDAF7,  0x4FE5D7FC,   0x5DFEC0E1,  0x53F7CDEA,  0x79C8EEDB,  0x77C1E3D0,   0x65DAF4CD,  0x6BD3F9C6,
+	0x31A4B2AF,  0x3FADBFA4,   0x2DB6A8B9,  0x23BFA5B2,  0x09808683,  0x07898B88,   0x15929C95,  0x1B9B919E,
+	0xA17C0A47,  0xAF75074C,   0xBD6E1051,  0xB3671D5A,  0x99583E6B,  0x97513360,   0x854A247D,  0x8B432976,
+	0xD134621F,  0xDF3D6F14,   0xCD267809,  0xC32F7502,  0xE9105633,  0xE7195B38,   0xF5024C25,  0xFB0B412E,
+	0x9AD7618C,  0x94DE6C87,   0x86C57B9A,  0x88CC7691,  0xA2F355A0,  0xACFA58AB,   0xBEE14FB6,  0xB0E842BD,
+	0xEA9F09D4,  0xE49604DF,   0xF68D13C2,  0xF8841EC9,  0xD2BB3DF8,  0xDCB230F3,   0xCEA927EE,  0xC0A02AE5,
+	0x7A47B13C,  0x744EBC37,   0x6655AB2A,  0x685CA621,  0x42638510,  0x4C6A881B,   0x5E719F06,  0x5078920D,
+	0x0A0FD964,  0x0406D46F,   0x161DC372,  0x1814CE79,  0x322BED48,  0x3C22E043,   0x2E39F75E,  0x2030FA55,
+	0xEC9AB701,  0xE293BA0A,   0xF088AD17,  0xFE81A01C,  0xD4BE832D,  0xDAB78E26,   0xC8AC993B,  0xC6A59430,
+	0x9CD2DF59,  0x92DBD252,   0x80C0C54F,  0x8EC9C844,  0xA4F6EB75,  0xAAFFE67E,   0xB8E4F163,  0xB6EDFC68,
+	0x0C0A67B1,  0x02036ABA,   0x10187DA7,  0x1E1170AC,  0x342E539D,  0x3A275E96,   0x283C498B,  0x26354480,
+	0x7C420FE9,  0x724B02E2,   0x605015FF,  0x6E5918F4,  0x44663BC5,  0x4A6F36CE,   0x587421D3,  0x567D2CD8,
+	0x37A10C7A,  0x39A80171,   0x2BB3166C,  0x25BA1B67,  0x0F853856,  0x018C355D,   0x13972240,  0x1D9E2F4B,
+	0x47E96422,  0x49E06929,   0x5BFB7E34,  0x55F2733F,  0x7FCD500E,  0x71C45D05,   0x63DF4A18,  0x6DD64713,
+	0xD731DCCA,  0xD938D1C1,   0xCB23C6DC,  0xC52ACBD7,  0xEF15E8E6,  0xE11CE5ED,   0xF307F2F0,  0xFD0EFFFB,
+	0xA779B492,  0xA970B999,   0xBB6BAE84,  0xB562A38F,  0x9F5D80BE,  0x91548DB5,   0x834F9AA8,  0x8D4697A3,
 } ;
 
 /* Corresponds to _IMXC2[256] */
-unsigned int mtpz_aes_gb13[] =  
+unsigned int mtpz_aes_gb13[] =
 {
-	0x00000000,  0x0D0B0E09,   0x1A161C12,  0x171D121B,  0x342C3824,  0x3927362D,   0x2E3A2436,  0x23312A3F, 
-	0x68587048,  0x65537E41,   0x724E6C5A,  0x7F456253,  0x5C74486C,  0x517F4665,   0x4662547E,  0x4B695A77, 
-	0xD0B0E090,  0xDDBBEE99,   0xCAA6FC82,  0xC7ADF28B,  0xE49CD8B4,  0xE997D6BD,   0xFE8AC4A6,  0xF381CAAF, 
-	0xB8E890D8,  0xB5E39ED1,   0xA2FE8CCA,  0xAFF582C3,  0x8CC4A8FC,  0x81CFA6F5,   0x96D2B4EE,  0x9BD9BAE7, 
-	0xBB7BDB3B,  0xB670D532,   0xA16DC729,  0xAC66C920,  0x8F57E31F,  0x825CED16,   0x9541FF0D,  0x984AF104, 
-	0xD323AB73,  0xDE28A57A,   0xC935B761,  0xC43EB968,  0xE70F9357,  0xEA049D5E,   0xFD198F45,  0xF012814C, 
-	0x6BCB3BAB,  0x66C035A2,   0x71DD27B9,  0x7CD629B0,  0x5FE7038F,  0x52EC0D86,   0x45F11F9D,  0x48FA1194, 
-	0x03934BE3,  0x0E9845EA,   0x198557F1,  0x148E59F8,  0x37BF73C7,  0x3AB47DCE,   0x2DA96FD5,  0x20A261DC, 
-	0x6DF6AD76,  0x60FDA37F,   0x77E0B164,  0x7AEBBF6D,  0x59DA9552,  0x54D19B5B,   0x43CC8940,  0x4EC78749, 
-	0x05AEDD3E,  0x08A5D337,   0x1FB8C12C,  0x12B3CF25,  0x3182E51A,  0x3C89EB13,   0x2B94F908,  0x269FF701, 
-	0xBD464DE6,  0xB04D43EF,   0xA75051F4,  0xAA5B5FFD,  0x896A75C2,  0x84617BCB,   0x937C69D0,  0x9E7767D9, 
-	0xD51E3DAE,  0xD81533A7,   0xCF0821BC,  0xC2032FB5,  0xE132058A,  0xEC390B83,   0xFB241998,  0xF62F1791, 
-	0xD68D764D,  0xDB867844,   0xCC9B6A5F,  0xC1906456,  0xE2A14E69,  0xEFAA4060,   0xF8B7527B,  0xF5BC5C72, 
-	0xBED50605,  0xB3DE080C,   0xA4C31A17,  0xA9C8141E,  0x8AF93E21,  0x87F23028,   0x90EF2233,  0x9DE42C3A, 
-	0x063D96DD,  0x0B3698D4,   0x1C2B8ACF,  0x112084C6,  0x3211AEF9,  0x3F1AA0F0,   0x2807B2EB,  0x250CBCE2, 
-	0x6E65E695,  0x636EE89C,   0x7473FA87,  0x7978F48E,  0x5A49DEB1,  0x5742D0B8,   0x405FC2A3,  0x4D54CCAA, 
-	0xDAF741EC,  0xD7FC4FE5,   0xC0E15DFE,  0xCDEA53F7,  0xEEDB79C8,  0xE3D077C1,   0xF4CD65DA,  0xF9C66BD3, 
-	0xB2AF31A4,  0xBFA43FAD,   0xA8B92DB6,  0xA5B223BF,  0x86830980,  0x8B880789,   0x9C951592,  0x919E1B9B, 
-	0x0A47A17C,  0x074CAF75,   0x1051BD6E,  0x1D5AB367,  0x3E6B9958,  0x33609751,   0x247D854A,  0x29768B43, 
-	0x621FD134,  0x6F14DF3D,   0x7809CD26,  0x7502C32F,  0x5633E910,  0x5B38E719,   0x4C25F502,  0x412EFB0B, 
-	0x618C9AD7,  0x6C8794DE,   0x7B9A86C5,  0x769188CC,  0x55A0A2F3,  0x58ABACFA,   0x4FB6BEE1,  0x42BDB0E8, 
-	0x09D4EA9F,  0x04DFE496,   0x13C2F68D,  0x1EC9F884,  0x3DF8D2BB,  0x30F3DCB2,   0x27EECEA9,  0x2AE5C0A0, 
-	0xB13C7A47,  0xBC37744E,   0xAB2A6655,  0xA621685C,  0x85104263,  0x881B4C6A,   0x9F065E71,  0x920D5078, 
-	0xD9640A0F,  0xD46F0406,   0xC372161D,  0xCE791814,  0xED48322B,  0xE0433C22,   0xF75E2E39,  0xFA552030, 
-	0xB701EC9A,  0xBA0AE293,   0xAD17F088,  0xA01CFE81,  0x832DD4BE,  0x8E26DAB7,   0x993BC8AC,  0x9430C6A5, 
-	0xDF599CD2,  0xD25292DB,   0xC54F80C0,  0xC8448EC9,  0xEB75A4F6,  0xE67EAAFF,   0xF163B8E4,  0xFC68B6ED, 
-	0x67B10C0A,  0x6ABA0203,   0x7DA71018,  0x70AC1E11,  0x539D342E,  0x5E963A27,   0x498B283C,  0x44802635, 
-	0x0FE97C42,  0x02E2724B,   0x15FF6050,  0x18F46E59,  0x3BC54466,  0x36CE4A6F,   0x21D35874,  0x2CD8567D, 
-	0x0C7A37A1,  0x017139A8,   0x166C2BB3,  0x1B6725BA,  0x38560F85,  0x355D018C,   0x22401397,  0x2F4B1D9E, 
-	0x642247E9,  0x692949E0,   0x7E345BFB,  0x733F55F2,  0x500E7FCD,  0x5D0571C4,   0x4A1863DF,  0x47136DD6, 
-	0xDCCAD731,  0xD1C1D938,   0xC6DCCB23,  0xCBD7C52A,  0xE8E6EF15,  0xE5EDE11C,   0xF2F0F307,  0xFFFBFD0E, 
-	0xB492A779,  0xB999A970,   0xAE84BB6B,  0xA38FB562,  0x80BE9F5D,  0x8DB59154,   0x9AA8834F,  0x97A38D46, 
+	0x00000000,  0x0D0B0E09,   0x1A161C12,  0x171D121B,  0x342C3824,  0x3927362D,   0x2E3A2436,  0x23312A3F,
+	0x68587048,  0x65537E41,   0x724E6C5A,  0x7F456253,  0x5C74486C,  0x517F4665,   0x4662547E,  0x4B695A77,
+	0xD0B0E090,  0xDDBBEE99,   0xCAA6FC82,  0xC7ADF28B,  0xE49CD8B4,  0xE997D6BD,   0xFE8AC4A6,  0xF381CAAF,
+	0xB8E890D8,  0xB5E39ED1,   0xA2FE8CCA,  0xAFF582C3,  0x8CC4A8FC,  0x81CFA6F5,   0x96D2B4EE,  0x9BD9BAE7,
+	0xBB7BDB3B,  0xB670D532,   0xA16DC729,  0xAC66C920,  0x8F57E31F,  0x825CED16,   0x9541FF0D,  0x984AF104,
+	0xD323AB73,  0xDE28A57A,   0xC935B761,  0xC43EB968,  0xE70F9357,  0xEA049D5E,   0xFD198F45,  0xF012814C,
+	0x6BCB3BAB,  0x66C035A2,   0x71DD27B9,  0x7CD629B0,  0x5FE7038F,  0x52EC0D86,   0x45F11F9D,  0x48FA1194,
+	0x03934BE3,  0x0E9845EA,   0x198557F1,  0x148E59F8,  0x37BF73C7,  0x3AB47DCE,   0x2DA96FD5,  0x20A261DC,
+	0x6DF6AD76,  0x60FDA37F,   0x77E0B164,  0x7AEBBF6D,  0x59DA9552,  0x54D19B5B,   0x43CC8940,  0x4EC78749,
+	0x05AEDD3E,  0x08A5D337,   0x1FB8C12C,  0x12B3CF25,  0x3182E51A,  0x3C89EB13,   0x2B94F908,  0x269FF701,
+	0xBD464DE6,  0xB04D43EF,   0xA75051F4,  0xAA5B5FFD,  0x896A75C2,  0x84617BCB,   0x937C69D0,  0x9E7767D9,
+	0xD51E3DAE,  0xD81533A7,   0xCF0821BC,  0xC2032FB5,  0xE132058A,  0xEC390B83,   0xFB241998,  0xF62F1791,
+	0xD68D764D,  0xDB867844,   0xCC9B6A5F,  0xC1906456,  0xE2A14E69,  0xEFAA4060,   0xF8B7527B,  0xF5BC5C72,
+	0xBED50605,  0xB3DE080C,   0xA4C31A17,  0xA9C8141E,  0x8AF93E21,  0x87F23028,   0x90EF2233,  0x9DE42C3A,
+	0x063D96DD,  0x0B3698D4,   0x1C2B8ACF,  0x112084C6,  0x3211AEF9,  0x3F1AA0F0,   0x2807B2EB,  0x250CBCE2,
+	0x6E65E695,  0x636EE89C,   0x7473FA87,  0x7978F48E,  0x5A49DEB1,  0x5742D0B8,   0x405FC2A3,  0x4D54CCAA,
+	0xDAF741EC,  0xD7FC4FE5,   0xC0E15DFE,  0xCDEA53F7,  0xEEDB79C8,  0xE3D077C1,   0xF4CD65DA,  0xF9C66BD3,
+	0xB2AF31A4,  0xBFA43FAD,   0xA8B92DB6,  0xA5B223BF,  0x86830980,  0x8B880789,   0x9C951592,  0x919E1B9B,
+	0x0A47A17C,  0x074CAF75,   0x1051BD6E,  0x1D5AB367,  0x3E6B9958,  0x33609751,   0x247D854A,  0x29768B43,
+	0x621FD134,  0x6F14DF3D,   0x7809CD26,  0x7502C32F,  0x5633E910,  0x5B38E719,   0x4C25F502,  0x412EFB0B,
+	0x618C9AD7,  0x6C8794DE,   0x7B9A86C5,  0x769188CC,  0x55A0A2F3,  0x58ABACFA,   0x4FB6BEE1,  0x42BDB0E8,
+	0x09D4EA9F,  0x04DFE496,   0x13C2F68D,  0x1EC9F884,  0x3DF8D2BB,  0x30F3DCB2,   0x27EECEA9,  0x2AE5C0A0,
+	0xB13C7A47,  0xBC37744E,   0xAB2A6655,  0xA621685C,  0x85104263,  0x881B4C6A,   0x9F065E71,  0x920D5078,
+	0xD9640A0F,  0xD46F0406,   0xC372161D,  0xCE791814,  0xED48322B,  0xE0433C22,   0xF75E2E39,  0xFA552030,
+	0xB701EC9A,  0xBA0AE293,   0xAD17F088,  0xA01CFE81,  0x832DD4BE,  0x8E26DAB7,   0x993BC8AC,  0x9430C6A5,
+	0xDF599CD2,  0xD25292DB,   0xC54F80C0,  0xC8448EC9,  0xEB75A4F6,  0xE67EAAFF,   0xF163B8E4,  0xFC68B6ED,
+	0x67B10C0A,  0x6ABA0203,   0x7DA71018,  0x70AC1E11,  0x539D342E,  0x5E963A27,   0x498B283C,  0x44802635,
+	0x0FE97C42,  0x02E2724B,   0x15FF6050,  0x18F46E59,  0x3BC54466,  0x36CE4A6F,   0x21D35874,  0x2CD8567D,
+	0x0C7A37A1,  0x017139A8,   0x166C2BB3,  0x1B6725BA,  0x38560F85,  0x355D018C,   0x22401397,  0x2F4B1D9E,
+	0x642247E9,  0x692949E0,   0x7E345BFB,  0x733F55F2,  0x500E7FCD,  0x5D0571C4,   0x4A1863DF,  0x47136DD6,
+	0xDCCAD731,  0xD1C1D938,   0xC6DCCB23,  0xCBD7C52A,  0xE8E6EF15,  0xE5EDE11C,   0xF2F0F307,  0xFFFBFD0E,
+	0xB492A779,  0xB999A970,   0xAE84BB6B,  0xA38FB562,  0x80BE9F5D,  0x8DB59154,   0x9AA8834F,  0x97A38D46,
 };
 
 /* Corresponds to _IMXC3[256] */
-unsigned int mtpz_aes_gb9[] =  
+unsigned int mtpz_aes_gb9[] =
 {
-	0x00000000,  0x090D0B0E,   0x121A161C,  0x1B171D12,  0x24342C38,  0x2D392736,   0x362E3A24,  0x3F23312A, 
-	0x48685870,  0x4165537E,   0x5A724E6C,  0x537F4562,  0x6C5C7448,  0x65517F46,   0x7E466254,  0x774B695A, 
-	0x90D0B0E0,  0x99DDBBEE,   0x82CAA6FC,  0x8BC7ADF2,  0xB4E49CD8,  0xBDE997D6,   0xA6FE8AC4,  0xAFF381CA, 
-	0xD8B8E890,  0xD1B5E39E,   0xCAA2FE8C,  0xC3AFF582,  0xFC8CC4A8,  0xF581CFA6,   0xEE96D2B4,  0xE79BD9BA, 
-	0x3BBB7BDB,  0x32B670D5,   0x29A16DC7,  0x20AC66C9,  0x1F8F57E3,  0x16825CED,   0x0D9541FF,  0x04984AF1, 
-	0x73D323AB,  0x7ADE28A5,   0x61C935B7,  0x68C43EB9,  0x57E70F93,  0x5EEA049D,   0x45FD198F,  0x4CF01281, 
-	0xAB6BCB3B,  0xA266C035,   0xB971DD27,  0xB07CD629,  0x8F5FE703,  0x8652EC0D,   0x9D45F11F,  0x9448FA11, 
-	0xE303934B,  0xEA0E9845,   0xF1198557,  0xF8148E59,  0xC737BF73,  0xCE3AB47D,   0xD52DA96F,  0xDC20A261, 
-	0x766DF6AD,  0x7F60FDA3,   0x6477E0B1,  0x6D7AEBBF,  0x5259DA95,  0x5B54D19B,   0x4043CC89,  0x494EC787, 
-	0x3E05AEDD,  0x3708A5D3,   0x2C1FB8C1,  0x2512B3CF,  0x1A3182E5,  0x133C89EB,   0x082B94F9,  0x01269FF7, 
-	0xE6BD464D,  0xEFB04D43,   0xF4A75051,  0xFDAA5B5F,  0xC2896A75,  0xCB84617B,   0xD0937C69,  0xD99E7767, 
-	0xAED51E3D,  0xA7D81533,   0xBCCF0821,  0xB5C2032F,  0x8AE13205,  0x83EC390B,   0x98FB2419,  0x91F62F17, 
-	0x4DD68D76,  0x44DB8678,   0x5FCC9B6A,  0x56C19064,  0x69E2A14E,  0x60EFAA40,   0x7BF8B752,  0x72F5BC5C, 
-	0x05BED506,  0x0CB3DE08,   0x17A4C31A,  0x1EA9C814,  0x218AF93E,  0x2887F230,   0x3390EF22,  0x3A9DE42C, 
-	0xDD063D96,  0xD40B3698,   0xCF1C2B8A,  0xC6112084,  0xF93211AE,  0xF03F1AA0,   0xEB2807B2,  0xE2250CBC, 
-	0x956E65E6,  0x9C636EE8,   0x877473FA,  0x8E7978F4,  0xB15A49DE,  0xB85742D0,   0xA3405FC2,  0xAA4D54CC, 
-	0xECDAF741,  0xE5D7FC4F,   0xFEC0E15D,  0xF7CDEA53,  0xC8EEDB79,  0xC1E3D077,   0xDAF4CD65,  0xD3F9C66B, 
-	0xA4B2AF31,  0xADBFA43F,   0xB6A8B92D,  0xBFA5B223,  0x80868309,  0x898B8807,   0x929C9515,  0x9B919E1B, 
-	0x7C0A47A1,  0x75074CAF,   0x6E1051BD,  0x671D5AB3,  0x583E6B99,  0x51336097,   0x4A247D85,  0x4329768B, 
-	0x34621FD1,  0x3D6F14DF,   0x267809CD,  0x2F7502C3,  0x105633E9,  0x195B38E7,   0x024C25F5,  0x0B412EFB, 
-	0xD7618C9A,  0xDE6C8794,   0xC57B9A86,  0xCC769188,  0xF355A0A2,  0xFA58ABAC,   0xE14FB6BE,  0xE842BDB0, 
-	0x9F09D4EA,  0x9604DFE4,   0x8D13C2F6,  0x841EC9F8,  0xBB3DF8D2,  0xB230F3DC,   0xA927EECE,  0xA02AE5C0, 
-	0x47B13C7A,  0x4EBC3774,   0x55AB2A66,  0x5CA62168,  0x63851042,  0x6A881B4C,   0x719F065E,  0x78920D50, 
-	0x0FD9640A,  0x06D46F04,   0x1DC37216,  0x14CE7918,  0x2BED4832,  0x22E0433C,   0x39F75E2E,  0x30FA5520, 
-	0x9AB701EC,  0x93BA0AE2,   0x88AD17F0,  0x81A01CFE,  0xBE832DD4,  0xB78E26DA,   0xAC993BC8,  0xA59430C6, 
-	0xD2DF599C,  0xDBD25292,   0xC0C54F80,  0xC9C8448E,  0xF6EB75A4,  0xFFE67EAA,   0xE4F163B8,  0xEDFC68B6, 
-	0x0A67B10C,  0x036ABA02,   0x187DA710,  0x1170AC1E,  0x2E539D34,  0x275E963A,   0x3C498B28,  0x35448026, 
-	0x420FE97C,  0x4B02E272,   0x5015FF60,  0x5918F46E,  0x663BC544,  0x6F36CE4A,   0x7421D358,  0x7D2CD856, 
-	0xA10C7A37,  0xA8017139,   0xB3166C2B,  0xBA1B6725,  0x8538560F,  0x8C355D01,   0x97224013,  0x9E2F4B1D, 
-	0xE9642247,  0xE0692949,   0xFB7E345B,  0xF2733F55,  0xCD500E7F,  0xC45D0571,   0xDF4A1863,  0xD647136D, 
-	0x31DCCAD7,  0x38D1C1D9,   0x23C6DCCB,  0x2ACBD7C5,  0x15E8E6EF,  0x1CE5EDE1,   0x07F2F0F3,  0x0EFFFBFD, 
-	0x79B492A7,  0x70B999A9,   0x6BAE84BB,  0x62A38FB5,  0x5D80BE9F,  0x548DB591,   0x4F9AA883,  0x4697A38D, 
+	0x00000000,  0x090D0B0E,   0x121A161C,  0x1B171D12,  0x24342C38,  0x2D392736,   0x362E3A24,  0x3F23312A,
+	0x48685870,  0x4165537E,   0x5A724E6C,  0x537F4562,  0x6C5C7448,  0x65517F46,   0x7E466254,  0x774B695A,
+	0x90D0B0E0,  0x99DDBBEE,   0x82CAA6FC,  0x8BC7ADF2,  0xB4E49CD8,  0xBDE997D6,   0xA6FE8AC4,  0xAFF381CA,
+	0xD8B8E890,  0xD1B5E39E,   0xCAA2FE8C,  0xC3AFF582,  0xFC8CC4A8,  0xF581CFA6,   0xEE96D2B4,  0xE79BD9BA,
+	0x3BBB7BDB,  0x32B670D5,   0x29A16DC7,  0x20AC66C9,  0x1F8F57E3,  0x16825CED,   0x0D9541FF,  0x04984AF1,
+	0x73D323AB,  0x7ADE28A5,   0x61C935B7,  0x68C43EB9,  0x57E70F93,  0x5EEA049D,   0x45FD198F,  0x4CF01281,
+	0xAB6BCB3B,  0xA266C035,   0xB971DD27,  0xB07CD629,  0x8F5FE703,  0x8652EC0D,   0x9D45F11F,  0x9448FA11,
+	0xE303934B,  0xEA0E9845,   0xF1198557,  0xF8148E59,  0xC737BF73,  0xCE3AB47D,   0xD52DA96F,  0xDC20A261,
+	0x766DF6AD,  0x7F60FDA3,   0x6477E0B1,  0x6D7AEBBF,  0x5259DA95,  0x5B54D19B,   0x4043CC89,  0x494EC787,
+	0x3E05AEDD,  0x3708A5D3,   0x2C1FB8C1,  0x2512B3CF,  0x1A3182E5,  0x133C89EB,   0x082B94F9,  0x01269FF7,
+	0xE6BD464D,  0xEFB04D43,   0xF4A75051,  0xFDAA5B5F,  0xC2896A75,  0xCB84617B,   0xD0937C69,  0xD99E7767,
+	0xAED51E3D,  0xA7D81533,   0xBCCF0821,  0xB5C2032F,  0x8AE13205,  0x83EC390B,   0x98FB2419,  0x91F62F17,
+	0x4DD68D76,  0x44DB8678,   0x5FCC9B6A,  0x56C19064,  0x69E2A14E,  0x60EFAA40,   0x7BF8B752,  0x72F5BC5C,
+	0x05BED506,  0x0CB3DE08,   0x17A4C31A,  0x1EA9C814,  0x218AF93E,  0x2887F230,   0x3390EF22,  0x3A9DE42C,
+	0xDD063D96,  0xD40B3698,   0xCF1C2B8A,  0xC6112084,  0xF93211AE,  0xF03F1AA0,   0xEB2807B2,  0xE2250CBC,
+	0x956E65E6,  0x9C636EE8,   0x877473FA,  0x8E7978F4,  0xB15A49DE,  0xB85742D0,   0xA3405FC2,  0xAA4D54CC,
+	0xECDAF741,  0xE5D7FC4F,   0xFEC0E15D,  0xF7CDEA53,  0xC8EEDB79,  0xC1E3D077,   0xDAF4CD65,  0xD3F9C66B,
+	0xA4B2AF31,  0xADBFA43F,   0xB6A8B92D,  0xBFA5B223,  0x80868309,  0x898B8807,   0x929C9515,  0x9B919E1B,
+	0x7C0A47A1,  0x75074CAF,   0x6E1051BD,  0x671D5AB3,  0x583E6B99,  0x51336097,   0x4A247D85,  0x4329768B,
+	0x34621FD1,  0x3D6F14DF,   0x267809CD,  0x2F7502C3,  0x105633E9,  0x195B38E7,   0x024C25F5,  0x0B412EFB,
+	0xD7618C9A,  0xDE6C8794,   0xC57B9A86,  0xCC769188,  0xF355A0A2,  0xFA58ABAC,   0xE14FB6BE,  0xE842BDB0,
+	0x9F09D4EA,  0x9604DFE4,   0x8D13C2F6,  0x841EC9F8,  0xBB3DF8D2,  0xB230F3DC,   0xA927EECE,  0xA02AE5C0,
+	0x47B13C7A,  0x4EBC3774,   0x55AB2A66,  0x5CA62168,  0x63851042,  0x6A881B4C,   0x719F065E,  0x78920D50,
+	0x0FD9640A,  0x06D46F04,   0x1DC37216,  0x14CE7918,  0x2BED4832,  0x22E0433C,   0x39F75E2E,  0x30FA5520,
+	0x9AB701EC,  0x93BA0AE2,   0x88AD17F0,  0x81A01CFE,  0xBE832DD4,  0xB78E26DA,   0xAC993BC8,  0xA59430C6,
+	0xD2DF599C,  0xDBD25292,   0xC0C54F80,  0xC9C8448E,  0xF6EB75A4,  0xFFE67EAA,   0xE4F163B8,  0xEDFC68B6,
+	0x0A67B10C,  0x036ABA02,   0x187DA710,  0x1170AC1E,  0x2E539D34,  0x275E963A,   0x3C498B28,  0x35448026,
+	0x420FE97C,  0x4B02E272,   0x5015FF60,  0x5918F46E,  0x663BC544,  0x6F36CE4A,   0x7421D358,  0x7D2CD856,
+	0xA10C7A37,  0xA8017139,   0xB3166C2B,  0xBA1B6725,  0x8538560F,  0x8C355D01,   0x97224013,  0x9E2F4B1D,
+	0xE9642247,  0xE0692949,   0xFB7E345B,  0xF2733F55,  0xCD500E7F,  0xC45D0571,   0xDF4A1863,  0xD647136D,
+	0x31DCCAD7,  0x38D1C1D9,   0x23C6DCCB,  0x2ACBD7C5,  0x15E8E6EF,  0x1CE5EDE1,   0x07F2F0F3,  0x0EFFFBFD,
+	0x79B492A7,  0x70B999A9,   0x6BAE84BB,  0x62A38FB5,  0x5D80BE9F,  0x548DB591,   0x4F9AA883,  0x4697A38D,
 };
 
 static uint16_t
@@ -1590,7 +1607,7 @@ ptp_mtpz_validatehandshakeresponse (PTPParams* params, unsigned char *random, un
 		unsigned char *machash_data = (unsigned char *)malloc(machash_length);
 		memcpy(machash_data, act_reader, machash_length);
 		act_reader += machash_length;
-	
+
 		*calculatedHash = machash_data;
 
 		free(message);
@@ -1652,10 +1669,10 @@ ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char
 	// Write the random bytes.
 	*(target++) = '\x00';	*(target++) = '\x10';
 	srand(time(NULL));
-	
-	for (i = 0; i < 16; i++) 
+
+	for (i = 0; i < 16; i++)
 		*(random + i) = (unsigned char)(rand() % 256);
-	
+
 	*out_random = random;
 	memcpy(target, random, 16);
 	target += 16;
@@ -1664,7 +1681,7 @@ ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char
 	char *v16 = (char *)malloc(28); memset(v16, 0, 28);
 	char *hash = (char *)malloc(20); memset(hash, 0, 20);
 	char *odata = (char *)malloc(128); memset(odata, 0, 128);
-	
+
 	mtpz_hash_reset_state(state);
 	mtpz_hash_transform_hash(state, (char *)acm + 2, (target - acm - 2));
 	mtpz_hash_finalize_hash(state, v16 + 8);
@@ -1703,8 +1720,8 @@ ptp_mtpz_makeapplicationcertificatemessage (unsigned int *out_len, unsigned char
 		*out_len = 0;
 		return NULL;
 	}
-	
-	char *signature = (char *)malloc(128);	
+
+	char *signature = (char *)malloc(128);
 	memset(signature, 0, 128);
 	mtpz_rsa_sign(128, (unsigned char *)odata, 128, (unsigned char *)signature, rsa);
 
@@ -1777,7 +1794,7 @@ uint16_t ptp_mtpz_handshake (PTPParams* params)
 
 	LIBMTP_INFO ("(MTPZ) Getting and validating handshake response.\n");
 	ret = ptp_mtpz_validatehandshakeresponse(params, random, &hash);
-	if (ret != PTP_RC_OK) 
+	if (ret != PTP_RC_OK)
 		goto free_random;
 
 	LIBMTP_INFO ("(MTPZ) Sending confirmation message.\n");
@@ -1795,4 +1812,3 @@ free_random:
 	free(random);
 	return ret;
 }
-#endif /* USE_MTPZ */

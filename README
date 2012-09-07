@@ -153,9 +153,10 @@ cannot test your solution.
   Sometimes the "gvfs-gphoto2-volume-monitor" is running on the
   system and hogging the device, try something like:
 
-  pkill gfvs-gphoto2-volume-monitor && mtp-detect
+  pkill gfvs-gphoto2-volume-monitor
 
-  to figure out if this may be the case.
+  Then plug in the device and issue "mtp-detect" to figure out if
+  this may be the case.
 
 * Generic MTP/PTP disconnect misbehaviour: we have noticed that
   Windows Media Player apparently never close the session to an MTP
@@ -760,7 +761,7 @@ Folders/directories aren't really such entities: they are just
 objects too, albeit objects that can act as parent to other
 objects. They are called "associations" and are created in atomic
 fashion and even though there is an MTP command to get all the
-associations of a certain association, this command is optional
+associations of a certain object, this command is optional
 so it is perfectly possible (and most common, actually) to create
 devices where the "folders" (which are actually associations) have
 no idea whatsoever of what files they are associated as parents to
@@ -771,11 +772,14 @@ Initiator / host computer.
 
 Moving a file to a new folder is for example very simple in a
 "real" file system. In PTP/MTP devices it is often not even possible,
-some devices *may* be able to do that. But actually the only
-reliable way of doing that is to upload the file to the host,
-download it with the new parent, then delete the old file.
-We have played with the idea of implementing this time consuming
-function, perhaps we will.
+some devices *may* be able to do that, if they support command
+0x1019 "Move Object", but actually the only reliable way of executing
+file movement is to upload the file to the host, download it with
+the new parent, then delete the old file. We have played with the
+idea of implementing this time consuming function as a fallback
+in case the device does not support command 0x1019, perhaps one day
+we will do that. (Some devices also support command 0x101a
+"Copy Object".)
 
 Then the issue that in PTP/MTP it is legal for two files to have
 exactly the same path as long as their object IDs differ. A
@@ -993,15 +997,28 @@ Draft agenda for a talk on MTP devices submitted for the Android
 builders summit, might come to recycle this:
 
 - Protocol overview
+  - Transactional filesystem - no corruption due to unplugged cables!
 - libmtp interface
 - relation to libgphoto2
+- User expectations fall short:
+  - Not really a mountable filesystem.
+  - Streaming does not work. (Size needs to be known beforehand due to
+    transactional nature.)
 - Device sins
   - Android bugs
   - Samsungs special Android MTP stack
   - SonyEricsson Aricent stack for Xperia Androids pre 4.0, broken headers!
+  - Flat access model vs hierarchical, how Android uses MTP as an hierachical
+    file system while it was previously a flat database.
 - Detecting from vendor extension, can fix in newer extensions!
 - Autoprobing on Linux
   - Color devices do not like autoprobing
-- Ideas??
-- Mode switch devices?
+  - Devices need different PIDs for every alternative interface due to
+    the Windows USB stack.
+  - Multimode USB - one PID for each mode due to Windows limitations not
+    applicable to Linux, SONY devices have ~5 different PIDs for a single
+    device.
+  - Mode switch devices?
 - MTPZ
+- Ideas??
+

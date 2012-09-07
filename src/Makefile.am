@@ -3,8 +3,11 @@ lib_LTLIBRARIES = libmtp.la
 libmtp_la_CFLAGS = @LIBUSB_CFLAGS@
 libmtp_la_SOURCES = libmtp.c unicode.c unicode.h util.c util.h playlist-spl.c \
 	gphoto2-endian.h _stdint.h ptp.c ptp.h libusb-glue.h \
-	music-players.h device-flags.h playlist-spl.h \
-	mtpz.c mtpz.h
+	music-players.h device-flags.h playlist-spl.h mtpz.h
+
+if MTPZ_COMPILE
+libmtp_la_SOURCES += mtpz.c
+endif
 
 if LIBUSB1_COMPILE
 libmtp_la_SOURCES += libusb1-glue.c
@@ -45,7 +48,7 @@ EXTRA_DIST=libmtp.h.in libmtp.sym ptp-pack.c
 # ---------------------------------------------------------------------------
 CURRENT=9
 AGE=0
-REVISION=3
+REVISION=4
 SOVERSION=$(CURRENT):$(REVISION):$(AGE)
 LT_CURRENT_MINUS_AGE=`expr $(CURRENT) - $(AGE)`
 
